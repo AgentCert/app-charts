@@ -1,0 +1,49 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    litmuschaos.io/chaos: "true"
+  labels:
+    app: sock-shop
+    name: orders-db
+  name: orders-db
+  namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+spec:
+  replicas: {{ .Values.sockShop.ordersDb.replicas }}
+  selector:
+    matchLabels:
+      app: sock-shop
+      name: orders-db
+  template:
+    metadata:
+      labels:
+        app: sock-shop
+        name: orders-db
+    spec:
+      containers:
+      - image: {{ .Values.sockShop.ordersDb.image }}
+        imagePullPolicy: Always
+        name: orders-db
+        ports:
+        - containerPort: 27017
+          name: mongo
+          protocol: TCP
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - CHOWN
+            - SETGID
+            - SETUID
+            drop:
+            - all
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: tmp-volume
+{{- end }}

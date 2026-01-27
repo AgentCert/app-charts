@@ -1,0 +1,41 @@
+{{- if and .Values.litmus.enabled .Values.litmus.chaosExporter.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: chaos-exporter
+  name: chaos-exporter
+  namespace: {{ include "sock-shop-litmus.litmusNamespace" . }}
+spec:
+  replicas: {{ .Values.litmus.chaosExporter.replicas }}
+  selector:
+    matchLabels:
+      app: chaos-exporter
+  template:
+    metadata:
+      labels:
+        app: chaos-exporter
+    spec:
+      containers:
+        - image: {{ .Values.litmus.chaosExporter.image }}
+          imagePullPolicy: Always
+          name: chaos-exporter
+      serviceAccountName: litmus
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: chaos-exporter
+  name: chaos-exporter
+  namespace: {{ include "sock-shop-litmus.litmusNamespace" . }}
+spec:
+  ports:
+    - port: {{ .Values.litmus.chaosExporter.service.port }}
+      name: tcp
+      protocol: TCP
+      targetPort: {{ .Values.litmus.chaosExporter.service.port }}
+  selector:
+    app: chaos-exporter
+  type: ClusterIP
+{{- end }}

@@ -1,0 +1,26 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+  labels:
+    {{- include "sock-shop-litmus.labels" . | nindent 4 }}
+{{- end }}
+---
+{{- if .Values.litmus.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "sock-shop-litmus.litmusNamespace" . }}
+  labels:
+    {{- include "sock-shop-litmus.labels" . | nindent 4 }}
+{{- end }}
+---
+{{- if .Values.monitoring.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "sock-shop-litmus.monitoringNamespace" . }}
+  labels:
+    {{- include "sock-shop-litmus.labels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,17 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: front-end
+  labels:
+    name: front-end
+  namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+spec:
+  type: {{ .Values.sockShop.frontEnd.service.type }}
+  ports:
+  - port: {{ .Values.sockShop.frontEnd.service.port }}
+    targetPort: {{ .Values.sockShop.frontEnd.service.targetPort }}
+    nodePort: {{ .Values.sockShop.frontEnd.service.nodePort }}
+  selector:
+    name: front-end
+{{- end }}

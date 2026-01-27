@@ -1,0 +1,21 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/scrape: 'true'
+  labels:
+    name: prometheus
+  name: prometheus
+  namespace: {{ include "sock-shop-litmus.monitoringNamespace" . }}
+spec:
+  selector:
+    app: prometheus
+  type: {{ .Values.monitoring.prometheus.service.type }}
+  ports:
+  - name: prometheus
+    protocol: TCP
+    port: {{ .Values.monitoring.prometheus.service.port }}
+    targetPort: {{ .Values.monitoring.prometheus.service.port }}
+    nodePort: {{ .Values.monitoring.prometheus.service.nodePort }}
+{{- end }}

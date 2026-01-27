@@ -1,0 +1,49 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    litmuschaos.io/chaos: "true"
+  labels:
+    app: sock-shop
+    name: user-db
+  name: user-db
+  namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+spec:
+  replicas: {{ .Values.sockShop.userDb.replicas }}
+  selector:
+    matchLabels:
+      app: sock-shop
+      name: user-db
+  template:
+    metadata:
+      labels:
+        app: sock-shop
+        name: user-db
+    spec:
+      containers:
+      - image: {{ .Values.sockShop.userDb.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        name: user-db
+        ports:
+        - containerPort: 27017
+          name: mongo
+          protocol: TCP
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - CHOWN
+            - SETGID
+            - SETUID
+            drop:
+            - all
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: tmp-volume
+{{- end }}

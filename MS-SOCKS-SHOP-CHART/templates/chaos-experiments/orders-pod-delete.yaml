@@ -1,0 +1,28 @@
+{{- if and .Values.chaosExperiments.enabled .Values.chaosExperiments.ordersPodDelete.enabled }}
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: orders-pod-delete
+  namespace: {{ include "sock-shop-litmus.litmusNamespace" . }}
+spec:
+  annotationCheck: 'false'
+  engineState: 'active'
+  appinfo:
+    appns: '{{ include "sock-shop-litmus.sockShopNamespace" . }}'
+    applabel: 'name=orders'
+    appkind: 'deployment'
+  chaosServiceAccount: litmus-admin
+  monitoring: true
+  jobCleanUpPolicy: 'retain'
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: '{{ .Values.chaosExperiments.ordersPodDelete.totalChaosDuration }}'
+            - name: CHAOS_INTERVAL
+              value: '{{ .Values.chaosExperiments.ordersPodDelete.chaosInterval }}'
+            - name: FORCE
+              value: '{{ .Values.chaosExperiments.ordersPodDelete.force }}'
+{{- end }}

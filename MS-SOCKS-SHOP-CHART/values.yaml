@@ -1,0 +1,155 @@
+# Default values for sock-shop-litmus chart
+
+# Global settings
+global:
+  imagePullPolicy: IfNotPresent
+
+# Namespace configurations
+namespaces:
+  sockShop: sock-shop
+  litmus: litmus
+  monitoring: monitoring
+
+# Sock-Shop Application Settings
+sockShop:
+  enabled: true
+  
+  # Front-end service
+  frontEnd:
+    replicas: 1
+    image: weaveworksdemos/front-end:0.3.12
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
+    service:
+      type: LoadBalancer
+      port: 80
+      targetPort: 8079
+      nodePort: 30001
+
+  # Catalogue service
+  catalogue:
+    replicas: 1
+    image: weaveworksdemos/catalogue:0.3.5
+
+  # Catalogue DB
+  catalogueDb:
+    replicas: 1
+    image: weaveworksdemos/catalogue-db:0.3.0
+    mysql:
+      rootPassword: fake_password
+      database: socksdb
+
+  # Carts service
+  carts:
+    replicas: 1
+    image: weaveworksdemos/carts:0.4.8
+    javaOpts: "-Xms64m -Xmx128m -XX:PermSize=32m -XX:MaxPermSize=64m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+
+  # Carts DB
+  cartsDb:
+    replicas: 1
+    image: mongo
+    resources:
+      limits:
+        ephemeralStorage: 2Gi
+      requests:
+        ephemeralStorage: 1Gi
+
+  # Orders service
+  orders:
+    replicas: 1
+    image: weaveworksdemos/orders:0.4.7
+    javaOpts: "-Xms64m -Xmx128m -XX:PermSize=32m -XX:MaxPermSize=64m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+
+  # Orders DB
+  ordersDb:
+    replicas: 1
+    image: mongo
+
+  # Payment service
+  payment:
+    replicas: 1
+    image: weaveworksdemos/payment:0.4.3
+
+  # Shipping service
+  shipping:
+    replicas: 1
+    image: weaveworksdemos/shipping:0.4.8
+    javaOpts: "-Xms64m -Xmx128m -XX:PermSize=32m -XX:MaxPermSize=64m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+
+  # User service
+  user:
+    replicas: 1
+    image: weaveworksdemos/user:0.4.7
+
+  # User DB
+  userDb:
+    replicas: 1
+    image: weaveworksdemos/user-db:0.4.0
+
+  # Queue Master
+  queueMaster:
+    replicas: 1
+    image: weaveworksdemos/queue-master:0.3.1
+
+  # RabbitMQ
+  rabbitmq:
+    replicas: 1
+    image: rabbitmq:3.6.8
+
+# LitmusChaos Settings
+# Set enabled: false since LitmusChaos is installed separately
+litmus:
+  enabled: false
+  
+  # Chaos Exporter for metrics
+  chaosExporter:
+    enabled: true
+    image: litmuschaos/chaos-exporter:1.13.3
+    replicas: 1
+    service:
+      port: 8080
+
+# Monitoring Settings
+# Set enabled: false since monitoring stack is installed separately
+monitoring:
+  enabled: false
+  
+  # Prometheus
+  prometheus:
+    replicas: 1
+    image: prom/prometheus:v2.25.0
+    retention: 360h
+    service:
+      type: NodePort
+      port: 9090
+      nodePort: 31090
+
+  # Grafana
+  grafana:
+    replicas: 1
+    image: grafana/grafana:latest
+    service:
+      type: NodePort
+      port: 3000
+      nodePort: 31687
+
+# Chaos Experiments Settings
+chaosExperiments:
+  enabled: false  # Set to true to deploy chaos experiments
+  
+  # Catalogue pod-delete experiment
+  cataloguePodDelete:
+    enabled: false
+    totalChaosDuration: "30"
+    chaosInterval: "10"
+    force: "false"
+
+  # Orders pod-delete experiment  
+  ordersPodDelete:
+    enabled: false
+    totalChaosDuration: "30"
+    chaosInterval: "10"
+    force: "false"

@@ -1,0 +1,15 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalogue
+  labels:
+    name: catalogue
+  namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    name: catalogue
+{{- end }}

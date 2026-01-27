@@ -1,0 +1,32 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: {{ include "sock-shop-litmus.monitoringNamespace" . }}
+spec:
+  replicas: {{ .Values.monitoring.grafana.replicas }}
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+      name: grafana
+    spec:
+      containers:
+      - image: {{ .Values.monitoring.grafana.image }}
+        imagePullPolicy: Always
+        name: grafana
+        ports:
+        - containerPort: 3000
+          name: grafana
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /var/lib/grafana
+          name: grafana-storage
+      volumes:
+      - emptyDir: {}
+        name: grafana-storage
+{{- end }}
