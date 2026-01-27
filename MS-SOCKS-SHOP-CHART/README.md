@@ -149,6 +149,38 @@ kubectl logs <pod-name> -n sock-shop
 kubectl describe pod <pod-name> -n sock-shop
 ```
 
+## Packaging the Helm Chart
+
+To create a distributable Helm package (.tgz file):
+
+```bash
+# Package the chart (creates .tgz in current directory)
+helm package MS-SOCKS-SHOP-CHART
+
+# Package the chart into a specific directory
+helm package MS-SOCKS-SHOP-CHART --destination MS-SOCKS-SHOP-CHART
+
+# Package with a specific version
+helm package MS-SOCKS-SHOP-CHART --version 1.1.0
+
+# Package with a specific app version
+helm package MS-SOCKS-SHOP-CHART --app-version 2.0.0
+```
+
+### Installing from the Package
+
+```bash
+# Install from the packaged chart
+helm install sock-shop ./MS-SOCKS-SHOP-CHART/sock-shop-litmus-1.0.0.tgz -f MS-SOCKS-SHOP-CHART/values.yaml --create-namespace --namespace sock-shop
+```
+
+### Push to OCI Registry (Optional)
+
+```bash
+# Push to an OCI-compliant registry
+helm push sock-shop-litmus-1.0.0.tgz oci://your-registry.com/charts
+```
+
 ## Advanced Installation
 
 ### Key Values
