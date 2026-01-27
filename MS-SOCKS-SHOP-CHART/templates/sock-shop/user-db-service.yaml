@@ -1,0 +1,15 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-db
+  labels:
+    name: user-db
+  namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+spec:
+  ports:
+  - port: 27017
+    targetPort: 27017
+  selector:
+    name: user-db
+{{- end }}

@@ -1,0 +1,37 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    litmuschaos.io/chaos: "true"
+  labels:
+    app: sock-shop
+    name: catalogue-db
+  name: catalogue-db
+  namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+spec:
+  replicas: {{ .Values.sockShop.catalogueDb.replicas }}
+  selector:
+    matchLabels:
+      app: sock-shop
+      name: catalogue-db
+  template:
+    metadata:
+      labels:
+        app: sock-shop
+        name: catalogue-db
+    spec:
+      containers:
+      - env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: {{ .Values.sockShop.catalogueDb.mysql.rootPassword }}
+        - name: MYSQL_DATABASE
+          value: {{ .Values.sockShop.catalogueDb.mysql.database }}
+        image: {{ .Values.sockShop.catalogueDb.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        name: catalogue-db
+        ports:
+        - containerPort: 3306
+          name: mysql
+          protocol: TCP
+{{- end }}

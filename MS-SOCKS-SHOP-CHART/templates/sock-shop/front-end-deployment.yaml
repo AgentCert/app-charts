@@ -1,0 +1,54 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    litmuschaos.io/chaos: "true"
+  labels:
+    app: sock-shop
+    name: front-end
+  name: front-end
+  namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+spec:
+  replicas: {{ .Values.sockShop.frontEnd.replicas }}
+  selector:
+    matchLabels:
+      app: sock-shop
+      name: front-end
+  template:
+    metadata:
+      labels:
+        app: sock-shop
+        name: front-end
+    spec:
+      containers:
+      - image: {{ .Values.sockShop.frontEnd.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        name: front-end
+        ports:
+        - containerPort: 8079
+          protocol: TCP
+        resources:
+          requests:
+            cpu: {{ .Values.sockShop.frontEnd.resources.requests.cpu }}
+            memory: {{ .Values.sockShop.frontEnd.resources.requests.memory }}
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8079
+          initialDelaySeconds: 300
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8079
+          initialDelaySeconds: 30
+          periodSeconds: 3
+        securityContext:
+          capabilities:
+            drop:
+            - all
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+{{- end }}

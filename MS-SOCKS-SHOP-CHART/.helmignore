@@ -1,0 +1,17 @@
+# Patterns to ignore when building packages
+.DS_Store
+.git/
+.gitignore
+.helmignore
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+# IDE directories
+.idea/
+.vscode/
+*.tmproj
+.project
+.classpath
+.settings/

@@ -1,0 +1,43 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    litmuschaos.io/chaos: "true"
+  labels:
+    app: sock-shop
+    name: queue-master
+  name: queue-master
+  namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+spec:
+  replicas: {{ .Values.sockShop.queueMaster.replicas }}
+  selector:
+    matchLabels:
+      app: sock-shop
+      name: queue-master
+  template:
+    metadata:
+      labels:
+        app: sock-shop
+        name: queue-master
+    spec:
+      containers:
+      - image: {{ .Values.sockShop.queueMaster.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        name: queue-master
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 300
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 180
+          periodSeconds: 3
+{{- end }}

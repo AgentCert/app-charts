@@ -1,0 +1,65 @@
+{{- if .Values.sockShop.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    litmuschaos.io/chaos: "true"
+  labels:
+    app: sock-shop
+    name: shipping
+  name: shipping
+  namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+spec:
+  replicas: {{ .Values.sockShop.shipping.replicas }}
+  selector:
+    matchLabels:
+      app: sock-shop
+      name: shipping
+  template:
+    metadata:
+      labels:
+        app: sock-shop
+        name: shipping
+    spec:
+      containers:
+      - env:
+        - name: ZIPKIN
+          value: zipkin.jaeger.svc.cluster.local
+        - name: JAVA_OPTS
+          value: {{ .Values.sockShop.shipping.javaOpts | quote }}
+        image: {{ .Values.sockShop.shipping.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        name: shipping
+        ports:
+        - containerPort: 80
+          protocol: TCP
+        resources: {}
+        securityContext:
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+            drop:
+            - all
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 10001
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 300
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 180
+          periodSeconds: 3
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-volume
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: tmp-volume
+{{- end }}
