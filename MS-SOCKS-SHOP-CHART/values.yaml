@@ -153,3 +153,25 @@ chaosExperiments:
     totalChaosDuration: "30"
     chaosInterval: "10"
     force: "false"
+
+# MCP Tools Settings
+# Tools for Model Context Protocol integration
+mcpTools:
+  # Kubernetes Log Tool - fetches pod logs via HTTP API
+  k8sLogTool:
+    enabled: true
+    name: sockshop-log-tool
+    replicas: 1
+    image: sockshop-log-tool:latest
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+    service:
+      type: ClusterIP
+      port: 8082
+      targetPort: 8082
+      # nodePort: 31082  # Uncomment if using NodePort

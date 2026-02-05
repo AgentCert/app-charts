@@ -1,0 +1,123 @@
+{{- if .Values.mcpTools.k8sLogTool.enabled }}
+---
+# ServiceAccount for k8s-log-tool
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.mcpTools.k8sLogTool.name }}
+  namespace: {{ .Values.namespaces.sockShop }}
+  labels:
+    app: {{ .Values.mcpTools.k8sLogTool.name }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+
+---
+# ClusterRole for reading pods and logs across all namespaces
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.mcpTools.k8sLogTool.name }}
+  labels:
+    app: {{ .Values.mcpTools.k8sLogTool.name }}
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding to bind ServiceAccount to ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.mcpTools.k8sLogTool.name }}
+  labels:
+    app: {{ .Values.mcpTools.k8sLogTool.name }}
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.mcpTools.k8sLogTool.name }}
+  namespace: {{ .Values.namespaces.sockShop }}
+roleRef:
+  kind: ClusterRole
+  name: {{ .Values.mcpTools.k8sLogTool.name }}
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Deployment for k8s-log-tool
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.mcpTools.k8sLogTool.name }}
+  namespace: {{ .Values.namespaces.sockShop }}
+  labels:
+    app: {{ .Values.mcpTools.k8sLogTool.name }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  replicas: {{ .Values.mcpTools.k8sLogTool.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.mcpTools.k8sLogTool.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.mcpTools.k8sLogTool.name }}
+    spec:
+      serviceAccountName: {{ .Values.mcpTools.k8sLogTool.name }}
+      containers:
+      - name: {{ .Values.mcpTools.k8sLogTool.name }}
+        image: {{ .Values.mcpTools.k8sLogTool.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - containerPort: {{ .Values.mcpTools.k8sLogTool.service.targetPort }}
+          name: http
+        env:
+        - name: PORT
+          value: "{{ .Values.mcpTools.k8sLogTool.service.targetPort }}"
+        resources:
+          requests:
+            memory: {{ .Values.mcpTools.k8sLogTool.resources.requests.memory | quote }}
+            cpu: {{ .Values.mcpTools.k8sLogTool.resources.requests.cpu | quote }}
+          limits:
+            memory: {{ .Values.mcpTools.k8sLogTool.resources.limits.memory | quote }}
+            cpu: {{ .Values.mcpTools.k8sLogTool.resources.limits.cpu | quote }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+
+---
+# Service for k8s-log-tool
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.mcpTools.k8sLogTool.name }}
+  namespace: {{ .Values.namespaces.sockShop }}
+  labels:
+    app: {{ .Values.mcpTools.k8sLogTool.name }}
+spec:
+  type: {{ .Values.mcpTools.k8sLogTool.service.type }}
+  ports:
+  - port: {{ .Values.mcpTools.k8sLogTool.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+    {{- if and (eq .Values.mcpTools.k8sLogTool.service.type "NodePort") .Values.mcpTools.k8sLogTool.service.nodePort }}
+    nodePort: {{ .Values.mcpTools.k8sLogTool.service.nodePort }}
+    {{- end }}
+  selector:
+    app: {{ .Values.mcpTools.k8sLogTool.name }}
+{{- end }}

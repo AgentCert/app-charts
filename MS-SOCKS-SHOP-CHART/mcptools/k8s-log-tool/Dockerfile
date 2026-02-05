@@ -28,13 +28,14 @@ RUN apk --no-cache add ca-certificates
 # Create non-root user for security
 RUN adduser -D -s /bin/sh appuser
 
-WORKDIR /root/
+# Create app directory owned by appuser
+WORKDIR /app
 
 # Copy the binary from builder stage
 COPY --from=builder /app/k8s-log-tool .
 
-# Change ownership to non-root user
-RUN chown appuser:appuser k8s-log-tool
+# Set executable permission and change ownership to non-root user
+RUN chmod +x k8s-log-tool && chown appuser:appuser k8s-log-tool
 
 # Switch to non-root user
 USER appuser
