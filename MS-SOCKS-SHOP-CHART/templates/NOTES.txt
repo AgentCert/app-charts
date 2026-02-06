@@ -84,7 +84,7 @@ The MCP K8s Log Tool has been deployed to namespace: {{ include "sock-shop-litmu
 
 To access the Log Tool API:
 
-  kubectl port-forward svc/{{ .Values.mcpTools.k8sLogTool.name }} -n {{ include "sock-shop-litmus.sockShopNamespace" . }} 8082:8080
+  kubectl port-forward svc/{{ .Values.mcpTools.k8sLogTool.name }} -n {{ include "sock-shop-litmus.sockShopNamespace" . }} 8082:8082
 
   Then open: http://localhost:8082
 
@@ -97,9 +97,9 @@ Example - Fetch front-end logs:
 
   curl "http://localhost:8082/logs?namespace={{ include "sock-shop-litmus.sockShopNamespace" . }}&pod=<pod-name>&lines=100"
 
-List pods to get pod names:
+To get pod names for fetching logs:
 
-  kubectl get pods -n {{ include "sock-shop-litmus.sockShopNamespace" . }}
+  kubectl get pods -n {{ include "sock-shop-litmus.sockShopNamespace" . }} -o custom-columns="POD_NAME:.metadata.name" --no-headers
 
 {{- end }}
 
