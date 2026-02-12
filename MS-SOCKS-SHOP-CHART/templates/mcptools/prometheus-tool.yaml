@@ -1,0 +1,83 @@
+{{- if .Values.mcpTools.prometheusTool.enabled }}
+---
+# Deployment for prometheus-tool
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.mcpTools.prometheusTool.name }}
+  namespace: {{ .Values.namespaces.sockShop }}
+  labels:
+    app: {{ .Values.mcpTools.prometheusTool.name }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  replicas: {{ .Values.mcpTools.prometheusTool.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.mcpTools.prometheusTool.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.mcpTools.prometheusTool.name }}
+    spec:
+      containers:
+      - name: {{ .Values.mcpTools.prometheusTool.name }}
+        image: {{ .Values.mcpTools.prometheusTool.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - containerPort: {{ .Values.mcpTools.prometheusTool.service.targetPort }}
+          name: http
+        env:
+        - name: PORT
+          value: "{{ .Values.mcpTools.prometheusTool.service.targetPort }}"
+        - name: PROMETHEUS_URL
+          value: "http://prometheus.{{ .Values.namespaces.monitoring }}.svc.cluster.local:{{ .Values.monitoring.prometheus.service.port }}"
+        resources:
+          requests:
+            memory: {{ .Values.mcpTools.prometheusTool.resources.requests.memory | quote }}
+            cpu: {{ .Values.mcpTools.prometheusTool.resources.requests.cpu | quote }}
+          limits:
+            memory: {{ .Values.mcpTools.prometheusTool.resources.limits.memory | quote }}
+            cpu: {{ .Values.mcpTools.prometheusTool.resources.limits.cpu | quote }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+
+---
+# Service for prometheus-tool
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.mcpTools.prometheusTool.name }}
+  namespace: {{ .Values.namespaces.sockShop }}
+  labels:
+    app: {{ .Values.mcpTools.prometheusTool.name }}
+spec:
+  type: {{ .Values.mcpTools.prometheusTool.service.type }}
+  ports:
+  - port: {{ .Values.mcpTools.prometheusTool.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+    {{- if and (eq .Values.mcpTools.prometheusTool.service.type "NodePort") .Values.mcpTools.prometheusTool.service.nodePort }}
+    nodePort: {{ .Values.mcpTools.prometheusTool.service.nodePort }}
+    {{- end }}
+  selector:
+    app: {{ .Values.mcpTools.prometheusTool.name }}
+{{- end }}

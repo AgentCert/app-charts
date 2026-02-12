@@ -1,35 +1,43 @@
-# MCP Tools - Kubernetes Log Tool
+# MCP Tools - Kubernetes Log Tool & Prometheus Query Tool
 
-The MCP (Model Context Protocol) Kubernetes Log Tool is a lightweight HTTP API that allows AI assistants and LLMs to fetch pod logs from the Kubernetes cluster.
+The MCP (Model Context Protocol) tools are lightweight HTTP APIs that allow AI assistants and LLMs to interact with the SockShop Kubernetes cluster.
 
-## Overview
+## Tools Overview
+
+| Tool | Port | Purpose |
+|------|------|---------|
+| **K8s Log Tool** | 8082 | Fetch pod logs from Kubernetes |
+| **Prometheus Tool** | 8083 | Query Prometheus metrics |
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    MCP Log Tool Architecture                     │
+│                    MCP Tools Architecture                        │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌──────────────────┐                                           │
 │  │   AI Assistant   │                                           │
 │  │   (Claude, etc)  │                                           │
 │  └────────┬─────────┘                                           │
-│           │ HTTP Request                                         │
+│           │ HTTP Requests                                        │
 │           ▼                                                      │
 │  ┌──────────────────┐      ┌──────────────────┐                 │
 │  │  sockshop-log-   │─────▶│ Kubernetes API   │                 │
 │  │      tool        │      │     Server       │                 │
-│  │                  │      └────────┬─────────┘                 │
+│  │  :8082           │      └────────┬─────────┘                 │
 │  │  GET /logs       │               │                           │
 │  │  GET /health     │               ▼                           │
 │  └──────────────────┘      ┌──────────────────┐                 │
 │                            │   Pod Logs       │                 │
-│                            │                  │                 │
-│                            │ - front-end      │                 │
-│                            │ - catalogue      │                 │
-│                            │ - carts          │                 │
-│                            │ - orders         │                 │
-│                            │ - ...            │                 │
-│                            └──────────────────┘                 │
+│  ┌──────────────────┐      └──────────────────┘                 │
+│  │  sockshop-prom-  │                                           │
+│  │      tool        │      ┌──────────────────┐                 │
+│  │  :8083           │─────▶│   Prometheus     │                 │
+│  │  GET /query      │      │     Server       │                 │
+│  │  GET /targets    │      │     :9090        │                 │
+│  │  GET /alerts     │      └──────────────────┘                 │
+│  └──────────────────┘                                           │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -365,3 +373,190 @@ Recommendations:
 - [Getting Started](getting-started.md)
 - [Sock-Shop](sock-shop.md) - Application logs being accessed
 - [Prometheus](prometheus.md) - Metrics monitoring
+
+---
+
+## Prometheus Query Tool
+
+The Prometheus MCP Tool provides a REST API to query Prometheus metrics for AI/LLM integration.
+
+### Configuration
+
+```yaml
+mcpTools:
+  prometheusTool:
+    enabled: true
+    name: sockshop-prometheus-tool
+    replicas: 1
+    image: sockshop-prometheus-tool:latest
+    service:
+      type: ClusterIP
+      port: 8083
+      targetPort: 8083
+```
+
+### Deployed Resources
+
+When `mcpTools.prometheusTool.enabled: true`:
+
+| Resource | Name | Purpose |
+|----------|------|---------|
+| Deployment | `sockshop-prometheus-tool` | API server |
+| Service | `sockshop-prometheus-tool` | Exposes HTTP API |
+
+### Prometheus Tool API Reference
+
+**Base URL:** `http://sockshop-prometheus-tool:8083`
+
+Or via minikube:
+```bash
+minikube service sockshop-prometheus-tool -n sock-shop
+```
+
+#### GET /query — Execute Instant Query
+
+Runs a PromQL instant query against Prometheus.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| query | Yes | - | PromQL expression |
+| time | No | now | Evaluation timestamp |
+
+**Examples:**
+```bash
+# Service availability
+curl "http://localhost:8083/query?query=up{job=~\"sock-shop/.*\"}"
+
+# Memory usage per service
+curl "http://localhost:8083/query?query=go_memstats_alloc_bytes{job=~\"sock-shop/.*\"}"
+
+# Goroutines per service
+curl "http://localhost:8083/query?query=go_goroutines{job=~\"sock-shop/.*\"}"
+```
+
+#### GET /query_range — Execute Range Query
+
+Runs a PromQL range query (for graphs/trends).
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| query | Yes | - | PromQL expression |
+| start | No | 1h ago | Start timestamp |
+| end | No | now | End timestamp |
+| step | No | 60s | Resolution step |
+
+**Example:**
+```bash
+# CPU usage trend over last hour
+curl "http://localhost:8083/query_range?query=rate(process_cpu_seconds_total{job=~\"sock-shop/.*\"}[5m])&step=60s"
+```
+
+#### GET /targets — Get Scrape Targets
+
+Returns all Prometheus scrape targets and their health status.
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| state | No | any | Filter: active, dropped, any |
+
+**Example:**
+```bash
+curl "http://localhost:8083/targets"
+curl "http://localhost:8083/targets?state=active"
+```
+
+#### GET /alerts — Get Active Alerts
+
+Returns all active alerts from Prometheus.
+
+**Example:**
+```bash
+curl "http://localhost:8083/alerts"
+```
+
+#### GET /metadata — Get Metric Metadata
+
+Returns metric metadata (type, help text, unit).
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| metric | No | all | Specific metric name |
+| limit | No | all | Max results to return |
+
+**Examples:**
+```bash
+curl "http://localhost:8083/metadata?metric=go_goroutines"
+curl "http://localhost:8083/metadata?limit=20"
+```
+
+#### GET /health — Health Check
+
+Returns tool health and Prometheus connectivity status.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "service": "sockshop-prometheus-tool",
+  "prometheus_url": "http://prometheus.monitoring.svc.cluster.local:9090",
+  "prometheus_status": "healthy",
+  "timestamp": "2026-02-12T10:00:00Z"
+}
+```
+
+### Useful PromQL Queries for SockShop
+
+| Query | Description |
+|-------|-------------|
+| `up{job=~"sock-shop/.*"}` | Service availability |
+| `go_goroutines{job=~"sock-shop/.*"}` | Goroutines per service |
+| `go_memstats_alloc_bytes{job=~"sock-shop/.*"}` | Memory allocated |
+| `rate(process_cpu_seconds_total{job=~"sock-shop/.*"}[5m])` | CPU usage rate |
+| `process_open_fds{job=~"sock-shop/.*"}` | Open file descriptors |
+| `go_threads{job=~"sock-shop/.*"}` | OS threads |
+
+### Building the Prometheus Tool Image
+
+```bash
+cd mcptools/prometheus-tool
+
+# Build
+docker build -t sockshop-prometheus-tool:latest .
+
+# Load into minikube
+minikube image load sockshop-prometheus-tool:latest
+```
+
+### Source Code
+
+```
+mcptools/prometheus-tool/
+├── main.go          # HTTP server with Prometheus API proxy
+├── go.mod           # Go module definition
+├── Dockerfile       # Multi-stage container build
+├── deployment.yaml  # K8s manifest (reference)
+└── README.md        # Tool documentation
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8083` | HTTP server port |
+| `PROMETHEUS_URL` | `http://prometheus.monitoring.svc.cluster.local:9090` | Prometheus server URL |
+
+### Integration with AI Assistants
+
+```json
+{
+  "mcpServers": {
+    "prometheus": {
+      "command": "node",
+      "args": ["mcp-prometheus-server.js"],
+      "env": {
+        "PROMETHEUS_TOOL_URL": "http://sockshop-prometheus-tool:8083"
+      }
+    }
+  }
+}
+```

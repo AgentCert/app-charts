@@ -175,3 +175,22 @@ mcpTools:
       port: 8082
       targetPort: 8082
       # nodePort: 31082  # Uncomment if using NodePort
+
+  # Prometheus Query Tool - queries Prometheus metrics via HTTP API
+  prometheusTool:
+    enabled: true
+    name: sockshop-prometheus-tool
+    replicas: 1
+    image: sockshop-prometheus-tool:latest
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+    service:
+      type: NodePort
+      port: 8083
+      targetPort: 8083
+      nodePort: 31083
