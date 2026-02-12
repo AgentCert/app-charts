@@ -76,6 +76,33 @@ Make sure you have LitmusChaos operator and experiments installed:
 
 5. Run the experiment and monitor in Grafana!
 
+{{- if .Values.mcpTools.k8sLogTool.enabled }}
+
+=== MCP KUBERNETES LOG TOOL ===
+
+The MCP K8s Log Tool has been deployed to namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+
+To access the Log Tool API:
+
+  kubectl port-forward svc/{{ .Values.mcpTools.k8sLogTool.name }} -n {{ include "sock-shop-litmus.sockShopNamespace" . }} 8082:8082
+
+  Then open: http://localhost:8082
+
+API Endpoints:
+  - GET /         - API documentation
+  - GET /health   - Health check
+  - GET /logs     - Fetch pod logs
+
+Example - Fetch front-end logs:
+
+  curl "http://localhost:8082/logs?namespace={{ include "sock-shop-litmus.sockShopNamespace" . }}&pod=<pod-name>&lines=100"
+
+To get pod names for fetching logs:
+
+  kubectl get pods -n {{ include "sock-shop-litmus.sockShopNamespace" . }} -o custom-columns="POD_NAME:.metadata.name" --no-headers
+
+{{- end }}
+
 === USEFUL COMMANDS ===
 
 Check all resources:

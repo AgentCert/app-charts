@@ -103,6 +103,7 @@ Open separate terminal windows for each service:
 | Service | Command | URL |
 |---------|---------|-----|
 | Sock-Shop Frontend | `kubectl port-forward svc/front-end -n sock-shop 8081:80` | http://localhost:8081 |
+| MCP Log Tool | `kubectl port-forward svc/sockshop-log-tool -n sock-shop 8082:8082` | http://localhost:8082 |
 | Prometheus | `kubectl port-forward svc/prometheus -n monitoring 9090:9090` | http://localhost:9090 |
 | Grafana | `kubectl port-forward svc/grafana -n monitoring 3000:3000` | http://localhost:3000 |
 
@@ -130,6 +131,31 @@ kubectl port-forward svc/prometheus -n monitoring 9090:9090
 
 Open http://localhost:9090
 
+### MCP Kubernetes Log Tool
+
+The MCP K8s Log Tool provides an API to fetch pod logs from the sock-shop namespace.
+
+```bash
+kubectl port-forward svc/sockshop-log-tool -n sock-shop 8082:8082
+```
+
+Open http://localhost:8082
+
+**API Endpoints:**
+- `GET /` - API documentation
+- `GET /health` - Health check
+- `GET /logs` - Fetch pod logs
+
+**Example - Fetch pod logs:**
+
+```bash
+# First, get the pod names
+kubectl get pods -n sock-shop -o custom-columns="POD_NAME:.metadata.name" --no-headers
+
+# Then fetch logs for a specific pod
+curl "http://localhost:8082/logs?namespace=sock-shop&pod=front-end-xxxxx&lines=100"
+```
+
 ## Useful Commands Reference
 
 ```bash
@@ -137,13 +163,22 @@ Open http://localhost:9090
 helm list -A
 
 # Upgrade existing release
-helm upgrade sock-shop "C:\Work\Infosys\Repos\sock-shop-litmus-chart" -n sock-shop
+helm upgrade sock-shop ./MS-SOCKS-SHOP-CHART/sock-shop-litmus-1.0.0.tgz -f MS-SOCKS-SHOP-CHART/values.yaml -n sock-shop
 
 # Uninstall release
 helm uninstall sock-shop -n sock-shop
 
+# Delete sock-shop namespace
+kubectl delete namespace sock-shop
+
+# Get all pod names in sock-shop namespace
+kubectl get pods -n sock-shop -o custom-columns="POD_NAME:.metadata.name" --no-headers
+
 # View pod logs
 kubectl logs <pod-name> -n sock-shop
+
+# View pod logs with MCP Log Tool API
+curl "http://localhost:8082/logs?namespace=sock-shop&pod=<pod-name>&lines=100"
 
 # Describe pod for troubleshooting
 kubectl describe pod <pod-name> -n sock-shop
