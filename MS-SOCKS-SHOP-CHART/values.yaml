@@ -113,9 +113,9 @@ litmus:
       port: 8080
 
 # Monitoring Settings
-# Set enabled: false since monitoring stack is installed separately
+# Set enabled: true to deploy Prometheus and Grafana
 monitoring:
-  enabled: false
+  enabled: true
   
   # Prometheus
   prometheus:
