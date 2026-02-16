@@ -26,7 +26,25 @@ spec:
         volumeMounts:
         - mountPath: /var/lib/grafana
           name: grafana-storage
+        - mountPath: /etc/grafana/provisioning/datasources
+          name: grafana-datasources
+          readOnly: true
+        - mountPath: /etc/grafana/provisioning/dashboards
+          name: grafana-dashboard-provider
+          readOnly: true
+        - mountPath: /var/lib/grafana/dashboards
+          name: grafana-dashboards
+          readOnly: true
       volumes:
       - emptyDir: {}
         name: grafana-storage
+      - configMap:
+          name: grafana-datasources
+        name: grafana-datasources
+      - configMap:
+          name: grafana-dashboard-provider
+        name: grafana-dashboard-provider
+      - configMap:
+          name: grafana-dashboard-sockshop
+        name: grafana-dashboards
 {{- end }}
