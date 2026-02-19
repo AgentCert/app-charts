@@ -58,7 +58,7 @@ func parseFlags() *Config {
 	flag.BoolVar(&config.Wait, "wait", true, "Wait for resources to be ready")
 	flag.StringVar(&config.Timeout, "timeout", "5m", "Timeout for installation")
 	flag.BoolVar(&config.CreateNS, "create-namespace", true, "Create namespace if it doesn't exist")
-	flag.BoolVar(&config.Upgrade, "upgrade", false, "Upgrade if release exists, install if not")
+	flag.BoolVar(&config.Upgrade, "upgrade", true, "Use helm upgrade --install for idempotent installs (set to false to use helm install)")
 	flag.StringVar(&config.KubeConfig, "kubeconfig", "", "Path to kubeconfig file")
 	flag.StringVar(&config.KubeContext, "context", "", "Kubernetes context to use")
 
