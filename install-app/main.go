@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -56,7 +58,7 @@ func parseFlags() *Config {
 	flag.StringVar(&config.SetValues, "set", "", "Set values on command line (key=value,key2=value2)")
 	flag.BoolVar(&config.DryRun, "dry-run", false, "Simulate installation without applying")
 	flag.BoolVar(&config.Wait, "wait", true, "Wait for resources to be ready")
-	flag.StringVar(&config.Timeout, "timeout", "5m", "Timeout for installation")
+	flag.StringVar(&config.Timeout, "timeout", "10m", "Timeout for installation")
 	flag.BoolVar(&config.CreateNS, "create-namespace", true, "Create namespace if it doesn't exist")
 	flag.BoolVar(&config.Upgrade, "upgrade", true, "Use helm upgrade --install for idempotent installs (set to false to use helm install)")
 	flag.StringVar(&config.KubeConfig, "kubeconfig", "", "Path to kubeconfig file")
@@ -117,6 +119,15 @@ func validateConfig(config *Config) error {
 func installChart(config *Config) error {
 	chartPath := filepath.Join(config.ChartsPath, config.FolderName)
 
+	// Pre-create namespace if requested, instead of relying on Helm's --create-namespace
+	// which fails with "already exists" error on upgrade --install when namespace was
+	// created outside of Helm
+	if config.CreateNS {
+		if err := ensureNamespace(config.Namespace, config.ReleaseName); err != nil {
+			log.Printf("Warning: failed to ensure namespace %s: %v", config.Namespace, err)
+		}
+	}
+
 	// Build helm command
 	var args []string
 
@@ -129,9 +140,7 @@ func installChart(config *Config) error {
 	args = append(args, config.ReleaseName, chartPath)
 	args = append(args, "--namespace", config.Namespace)
 
-	if config.CreateNS {
-		args = append(args, "--create-namespace")
-	}
+	// Namespace is pre-created by ensureNamespace(), no need for --create-namespace
 
 	if config.ValuesFile != "" {
 		args = append(args, "-f", config.ValuesFile)
@@ -148,9 +157,10 @@ func installChart(config *Config) error {
 		args = append(args, "--dry-run")
 	}
 
-	if config.Wait {
-		args = append(args, "--wait")
-	}
+	// NOTE: We intentionally do NOT pass --wait to Helm.
+	// Helm v3.14's client-go rate limiter has a known bug that causes
+	// "client rate limiter Wait returned an error: context deadline exceeded"
+	// when polling pod readiness. Instead, we use kubectl rollout status below.
 
 	if config.Timeout != "" {
 		args = append(args, "--timeout", config.Timeout)
@@ -170,7 +180,104 @@ func installChart(config *Config) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// If --wait was requested, use kubectl rollout status instead of Helm's
+	// built-in wait which suffers from client-go rate limiter bugs in v3.14
+	if config.Wait {
+		if err := waitForDeployments(config.Namespace, config.Timeout); err != nil {
+			return fmt.Errorf("deployments not ready: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// waitForDeployments waits for all deployments in the namespace to be ready
+// using kubectl rollout status, which doesn't suffer from Helm's rate limiter bug.
+func waitForDeployments(namespace, timeout string) error {
+	if timeout == "" {
+		timeout = "10m"
+	}
+
+	log.Printf("Waiting for all deployments in namespace %s to be ready (timeout: %s)...", namespace, timeout)
+
+	// Get list of deployments
+	listCmd := exec.Command("kubectl", "get", "deployments", "-n", namespace, "-o", "jsonpath={.items[*].metadata.name}")
+	out, err := listCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list deployments: %w", err)
+	}
+
+	deployments := strings.Fields(string(out))
+	if len(deployments) == 0 {
+		log.Printf("No deployments found in namespace %s, skipping wait", namespace)
+		return nil
+	}
+
+	log.Printf("Found %d deployments: %s", len(deployments), strings.Join(deployments, ", "))
+
+	// Wait for each deployment
+	for _, dep := range deployments {
+		log.Printf("Waiting for deployment %s...", dep)
+		waitCmd := exec.Command("kubectl", "rollout", "status", "deployment/"+dep,
+			"-n", namespace, "--timeout="+timeout)
+		waitCmd.Stdout = os.Stdout
+		waitCmd.Stderr = os.Stderr
+		if err := waitCmd.Run(); err != nil {
+			return fmt.Errorf("deployment %s not ready: %w", dep, err)
+		}
+		log.Printf("Deployment %s is ready", dep)
+	}
+
+	log.Printf("All deployments in namespace %s are ready", namespace)
+	return nil
+}
+
+// ensureNamespace creates the namespace if it doesn't already exist and ensures
+// it has the required Helm ownership labels and annotations so Helm can adopt it.
+func ensureNamespace(namespace, releaseName string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Check if namespace exists
+	checkCmd := exec.Command("kubectl", "get", "namespace", namespace)
+	if err := checkCmd.Run(); err != nil {
+		// Create namespace
+		log.Printf("Creating namespace: %s", namespace)
+		createCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", namespace)
+		createCmd.Stdout = os.Stdout
+		createCmd.Stderr = os.Stderr
+		if err := createCmd.Run(); err != nil {
+			return fmt.Errorf("failed to create namespace: %w", err)
+		}
+	} else {
+		log.Printf("Namespace %s already exists", namespace)
+	}
+
+	// Add Helm ownership labels and annotations so Helm can adopt the namespace
+	log.Printf("Labeling namespace %s for Helm ownership", namespace)
+	labelCmd := exec.CommandContext(ctx, "kubectl", "label", "namespace", namespace,
+		"app.kubernetes.io/managed-by=Helm", "--overwrite")
+	labelCmd.Stdout = os.Stdout
+	labelCmd.Stderr = os.Stderr
+	if err := labelCmd.Run(); err != nil {
+		return fmt.Errorf("failed to label namespace: %w", err)
+	}
+
+	annotateCmd := exec.CommandContext(ctx, "kubectl", "annotate", "namespace", namespace,
+		fmt.Sprintf("meta.helm.sh/release-name=%s", releaseName),
+		fmt.Sprintf("meta.helm.sh/release-namespace=%s", namespace),
+		"--overwrite")
+	annotateCmd.Stdout = os.Stdout
+	annotateCmd.Stderr = os.Stderr
+	if err := annotateCmd.Run(); err != nil {
+		return fmt.Errorf("failed to annotate namespace: %w", err)
+	}
+
+	return nil
 }
 
 // ListAvailableCharts lists all available charts in the charts path
