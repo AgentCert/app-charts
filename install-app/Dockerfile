@@ -23,6 +23,15 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o install-app .
 # Final stage
 FROM alpine:3.19
 
+RUN sed -i 's/https/http/g' /etc/apk/repositories && \
+    apk add --no-cache curl bash ca-certificates && \
+    curl -fsSL https://get.helm.sh/helm-v3.14.0-linux-amd64.tar.gz | tar -xzv && \
+    mv linux-amd64/helm /usr/local/bin/helm && \
+    rm -rf linux-amd64 && \
+    curl -fsSL "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl && \
+    rm -rf /var/cache/apk/*
+    
 # Install helm and kubectl
 RUN apk add --no-cache \
     curl \
