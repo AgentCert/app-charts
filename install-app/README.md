@@ -19,13 +19,12 @@ This tool provides a secure way to deploy Helm charts by packaging them directly
 ### Building the Image
 
 ```bash
-# Build with default settings
-make build
-
 # Build with custom registry/tag
 export IMAGE_REGISTRY=ghcr.io
 export IMAGE_REPO=agentcert/sock-shop
-export IMAGE_TAG=v1.0.0 make build
+export IMAGE_TAG=v1.0.0
+
+make build
 ```
 
 ### Pushing to Registry
