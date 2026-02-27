@@ -23,6 +23,8 @@ sockShop:
         cpu: 100m
         memory: 100Mi
     service:
+      annotations:
+        service.beta.kubernetes.io/azure-load-balancer-internal: "true"    
       type: LoadBalancer
       port: 80
       targetPort: 8079
