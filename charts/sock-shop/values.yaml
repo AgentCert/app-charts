@@ -155,42 +155,76 @@ chaosExperiments:
     force: "false"
 
 # MCP Tools Settings
-# Tools for Model Context Protocol integration
+# Tools for Model Context Protocol integration (using public MCP server images)
 mcpTools:
-  # Kubernetes Log Tool - fetches pod logs via HTTP API
-  k8sLogTool:
+  # Kubernetes MCP Server - exposes K8s + Litmus operations via MCP protocol
+  kubernetesMcpServer:
     enabled: true
-    name: sockshop-log-tool
+    name: kubernetes-mcp-server
     replicas: 1
-    image: sockshop-log-tool:latest
+    image: quay.io/containers/kubernetes_mcp_server:latest
+    port: 8081
+    args:
+      - "--port"
+      - "8081"
+      - "--stateless"
     resources:
       requests:
-        memory: "64Mi"
-        cpu: "50m"
-      limits:
         memory: "128Mi"
         cpu: "100m"
+        ephemeralStorage: "200Mi"
+      limits:
+        memory: "256Mi"
+        cpu: "500m"
+        ephemeralStorage: "500Mi"
+    securityContext:
+      runAsUser: 65532
+      allowPrivilegeEscalation: false
     service:
       type: ClusterIP
-      port: 8082
-      targetPort: 8082
-      # nodePort: 31082  # Uncomment if using NodePort
+      port: 8081
+      targetPort: 8081
+      # nodePort: 31081  # Uncomment if using NodePort
 
-  # Prometheus Query Tool - queries Prometheus metrics via HTTP API
-  prometheusTool:
+  # Prometheus MCP Server - exposes Prometheus queries via MCP protocol
+  prometheusMcpServer:
     enabled: true
-    name: sockshop-prometheus-tool
+    name: prometheus-mcp-server
     replicas: 1
-    image: sockshop-prometheus-tool:latest
+    image: ghcr.io/pab1it0/prometheus-mcp-server:latest
+    port: 9090
+    # Prometheus connection settings (stored in ConfigMap)
+    config:
+      prometheusUrl: ""  # Auto-resolved to http://prometheus.<monitoring-ns>.svc.cluster.local:9090
+      transport: "http"
+      bindHost: "0.0.0.0"
+      bindPort: "9090"
+      requestTimeout: "30"
+      sslVerify: "true"
+      disableLinks: "false"
+    # Prometheus authentication (stored in Secret, all optional)
+    auth:
+      # username: ""
+      # password: ""
+      # token: ""
+      # orgId: ""
+      placeholder: "unused"
     resources:
       requests:
-        memory: "64Mi"
-        cpu: "50m"
-      limits:
         memory: "128Mi"
         cpu: "100m"
+        ephemeralStorage: "200Mi"
+      limits:
+        memory: "256Mi"
+        cpu: "500m"
+        ephemeralStorage: "500Mi"
+    securityContext:
+      runAsUser: 65532
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
     service:
       type: NodePort
       port: 8083
-      targetPort: 8083
+      targetPort: 9090
       nodePort: 31083
