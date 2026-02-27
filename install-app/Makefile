@@ -2,7 +2,7 @@
 # Build and push Helm chart installer
 
 # Configuration - override these with environment variables or command line
-IMAGE_REGISTRY ?= docker.io
+IMAGE_REGISTRY ?= agentcert
 IMAGE_NAME ?= agentcert-install-app
 IMAGE_TAG ?= latest
 
