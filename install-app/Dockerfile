@@ -3,6 +3,11 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
+RUN apk update && \
+    apk add --no-cache ca-certificates && \
+    update-ca-certificates && \
+    apk add --no-cache git helm
+    
 # Install git for fetching dependencies
 RUN apk add --no-cache git
 
