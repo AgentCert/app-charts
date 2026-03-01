@@ -162,7 +162,7 @@ mcpTools:
     enabled: true
     name: sockshop-log-tool
     replicas: 1
-    image: sockshop-log-tool:latest
+    image: agentcert/sockshop-log-tool:latest
     resources:
       requests:
         memory: "64Mi"
@@ -181,7 +181,7 @@ mcpTools:
     enabled: true
     name: sockshop-prometheus-tool
     replicas: 1
-    image: sockshop-prometheus-tool:latest
+    image: agentcert/sockshop-prometheus-tool:latest
     resources:
       requests:
         memory: "64Mi"
