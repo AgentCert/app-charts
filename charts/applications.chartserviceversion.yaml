@@ -1,0 +1,60 @@
+apiVersion: agentcert.io/v1alpha1
+kind: ChartServiceVersion
+metadata:
+  name: applications
+  version: 0.1.0
+  annotations:
+    categories: Target Applications
+    vendor: AgentCert
+    chartDescription: >-
+      Target applications that can be deployed into the cluster for
+      chaos engineering and AI agent benchmarking.
+spec:
+  displayName: Target Applications
+  categoryDescription: >-
+    Pre-configured applications designed to be deployed as chaos experiment
+    targets. Each application is a realistic microservices stack with known
+    failure modes, suitable for benchmarking AI agent remediation capabilities.
+  keywords:
+    - target-app
+    - microservices
+    - benchmark
+  maturity: stable
+  maintainers:
+    - name: AgentCert Team
+      email: agentcert@microsoft.com
+  provider:
+    name: AgentCert
+  applications:
+    - name: sock-shop
+      displayName: Sock Shop
+      description: "Weaveworks Sock Shop — a cloud-native microservices demo with 13 services including carts, catalogue, orders, payment, shipping, user, queue-master, front-end, and supporting databases."
+      version: "1.0.0"
+      namespace: sock-shop
+      microservices:
+        - name: carts
+          description: "Shopping cart service"
+        - name: carts-db
+          description: "Cart database (MongoDB)"
+        - name: catalogue
+          description: "Product catalogue service"
+        - name: catalogue-db
+          description: "Catalogue database (MySQL)"
+        - name: front-end
+          description: "Web frontend"
+        - name: orders
+          description: "Order processing service"
+        - name: orders-db
+          description: "Orders database (MongoDB)"
+        - name: payment
+          description: "Payment service"
+        - name: queue-master
+          description: "Queue consumer for order fulfillment"
+        - name: rabbitmq
+          description: "Message broker (RabbitMQ)"
+        - name: shipping
+          description: "Shipping service"
+        - name: user
+          description: "User account service"
+        - name: user-db
+          description: "User database (MongoDB)"
