@@ -76,30 +76,42 @@ Make sure you have LitmusChaos operator and experiments installed:
 
 5. Run the experiment and monitor in Grafana!
 
-{{- if .Values.mcpTools.k8sLogTool.enabled }}
+{{- if .Values.mcpTools.kubernetesMcpServer.enabled }}
 
-=== MCP KUBERNETES LOG TOOL ===
+=== KUBERNETES MCP SERVER ===
 
-The MCP K8s Log Tool has been deployed to namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+The Kubernetes MCP Server has been deployed to namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
 
-To access the Log Tool API:
+To access the MCP Server:
 
-  kubectl port-forward svc/{{ .Values.mcpTools.k8sLogTool.name }} -n {{ include "sock-shop-litmus.sockShopNamespace" . }} 8082:8082
+  kubectl port-forward svc/{{ .Values.mcpTools.kubernetesMcpServer.name }} -n {{ include "sock-shop-litmus.sockShopNamespace" . }} {{ .Values.mcpTools.kubernetesMcpServer.service.port }}:{{ .Values.mcpTools.kubernetesMcpServer.service.port }}
 
-  Then open: http://localhost:8082
+Endpoints:
+  - Health check: http://localhost:{{ .Values.mcpTools.kubernetesMcpServer.service.port }}/healthz
+  - MCP (Streamable HTTP): http://localhost:{{ .Values.mcpTools.kubernetesMcpServer.service.port }}/mcp
+  - MCP (SSE):             http://localhost:{{ .Values.mcpTools.kubernetesMcpServer.service.port }}/sse
 
-API Endpoints:
-  - GET /         - API documentation
-  - GET /health   - Health check
-  - GET /logs     - Fetch pod logs
+In-cluster URL:
+  http://{{ .Values.mcpTools.kubernetesMcpServer.name }}.{{ include "sock-shop-litmus.sockShopNamespace" . }}.svc.cluster.local:{{ .Values.mcpTools.kubernetesMcpServer.service.port }}
 
-Example - Fetch front-end logs:
+{{- end }}
 
-  curl "http://localhost:8082/logs?namespace={{ include "sock-shop-litmus.sockShopNamespace" . }}&pod=<pod-name>&lines=100"
+{{- if .Values.mcpTools.prometheusMcpServer.enabled }}
 
-To get pod names for fetching logs:
+=== PROMETHEUS MCP SERVER ===
 
-  kubectl get pods -n {{ include "sock-shop-litmus.sockShopNamespace" . }} -o custom-columns="POD_NAME:.metadata.name" --no-headers
+The Prometheus MCP Server has been deployed to namespace: {{ include "sock-shop-litmus.sockShopNamespace" . }}
+
+To access the Prometheus MCP Server:
+
+  kubectl port-forward svc/{{ .Values.mcpTools.prometheusMcpServer.name }} -n {{ include "sock-shop-litmus.sockShopNamespace" . }} {{ .Values.mcpTools.prometheusMcpServer.service.port }}:{{ .Values.mcpTools.prometheusMcpServer.service.port }}
+
+{{- if and (eq .Values.mcpTools.prometheusMcpServer.service.type "NodePort") .Values.mcpTools.prometheusMcpServer.service.nodePort }}
+  Or via NodePort: http://<node-ip>:{{ .Values.mcpTools.prometheusMcpServer.service.nodePort }}
+{{- end }}
+
+In-cluster URL:
+  http://{{ .Values.mcpTools.prometheusMcpServer.name }}.{{ include "sock-shop-litmus.sockShopNamespace" . }}.svc.cluster.local:{{ .Values.mcpTools.prometheusMcpServer.service.port }}
 
 {{- end }}
 
