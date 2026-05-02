@@ -28,6 +28,13 @@ spec:
         ports:
         - containerPort: 80
           protocol: TCP
+        resources:
+          requests:
+            cpu: {{ .Values.sockShop.queueMaster.resources.requests.cpu }}
+            memory: {{ .Values.sockShop.queueMaster.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.sockShop.queueMaster.resources.limits.cpu }}
+            memory: {{ .Values.sockShop.queueMaster.resources.limits.memory }}
         livenessProbe:
           httpGet:
             path: /health

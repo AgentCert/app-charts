@@ -45,7 +45,14 @@ sockShop:
   carts:
     replicas: 1
     image: weaveworksdemos/carts:0.4.8
-    javaOpts: "-Xms96m -Xmx256m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+    javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 768Mi
+      limits:
+        cpu: 500m
+        memory: 1536Mi
 
   # Carts DB
   cartsDb:
@@ -61,7 +68,14 @@ sockShop:
   orders:
     replicas: 1
     image: weaveworksdemos/orders:0.4.7
-    javaOpts: "-Xms96m -Xmx256m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+    javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 768Mi
+      limits:
+        cpu: 500m
+        memory: 1536Mi
 
   # Orders DB
   ordersDb:
@@ -77,7 +91,14 @@ sockShop:
   shipping:
     replicas: 1
     image: weaveworksdemos/shipping:0.4.8
-    javaOpts: "-Xms96m -Xmx256m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+    javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 768Mi
+      limits:
+        cpu: 500m
+        memory: 1536Mi
 
   # User service
   user:
@@ -93,6 +114,13 @@ sockShop:
   queueMaster:
     replicas: 1
     image: weaveworksdemos/queue-master:0.3.1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 768Mi
+      limits:
+        cpu: 500m
+        memory: 1536Mi
 
   # RabbitMQ
   rabbitmq:

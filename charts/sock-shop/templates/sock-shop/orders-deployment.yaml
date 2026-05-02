@@ -33,7 +33,13 @@ spec:
         ports:
         - containerPort: 80
           protocol: TCP
-        resources: {}
+        resources:
+          requests:
+            cpu: {{ .Values.sockShop.orders.resources.requests.cpu }}
+            memory: {{ .Values.sockShop.orders.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.sockShop.orders.resources.limits.cpu }}
+            memory: {{ .Values.sockShop.orders.resources.limits.memory }}
         securityContext:
           capabilities:
             add:
