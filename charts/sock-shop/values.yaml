@@ -2,7 +2,7 @@
 
 # Global settings
 global:
-  imagePullPolicy: Always
+  imagePullPolicy: IfNotPresent
 
 # Namespace configurations
 namespaces:
