@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVER_NAMESPACE="litmus-chaos"
 SERVER_DEPLOYMENT="litmusportal-server"
 
@@ -31,7 +32,7 @@ IMAGE_TAG="ci-$(date +%Y%m%d%H%M%S)"
 IMAGE="agentcert/agentcert-install-app:${IMAGE_TAG}"
 
 echo "[INFO] Building ${IMAGE}"
-cd /mnt/d/Studies/app-charts
+cd "${SCRIPT_DIR}/.."
 docker build -t "${IMAGE}" -f install-app/Dockerfile .
 docker tag "${IMAGE}" agentcert/agentcert-install-app:latest
 docker tag "${IMAGE}" agentcert/agentcert-install-app:dev
@@ -49,7 +50,7 @@ minikube image load agentcert/agentcert-install-app:dev
 echo "[OK] Images loaded into minikube"
 
 # Update .env
-ENV_FILE="/mnt/d/Studies/AgentCert/local-custom/config/.env"
+ENV_FILE="${SCRIPT_DIR}/../../.env"
 sed -i "s|^INSTALL_APPLICATION_IMAGE=.*|INSTALL_APPLICATION_IMAGE=${IMAGE}|" "${ENV_FILE}"
 echo "[OK] .env updated: INSTALL_APPLICATION_IMAGE=${IMAGE}"
 
