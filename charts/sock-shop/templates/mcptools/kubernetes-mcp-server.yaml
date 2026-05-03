@@ -33,6 +33,13 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies", "ingresses"]
     verbs: ["get", "list", "watch"]
+  # Read-only access to the aggregated metrics API (served by metrics-server).
+  # Only `pods` is granted — `nodes.metrics.k8s.io` is cluster-scoped and cannot
+  # be granted by a namespace-scoped Role; the agent's prompt steers away from
+  # `nodes_top` accordingly.
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
   # Litmus Chaos CRDs
   - apiGroups: ["litmuschaos.io"]
     resources: ["chaosengines", "chaosexperiments", "chaosresults"]

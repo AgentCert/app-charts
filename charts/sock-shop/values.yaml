@@ -154,6 +154,10 @@ monitoring:
       type: NodePort
       port: 9090
       nodePort: 31090
+    # Route node + cadvisor scrapes through the apiserver proxy. Required on
+    # kind/minikube where kubelet TLS cert SANs don't match kube-sd's __address__.
+    # On larger clusters set to false to scrape kubelet :10250 directly.
+    kubeletProxy: true
 
   # Grafana
   grafana:
@@ -163,6 +167,16 @@ monitoring:
       type: NodePort
       port: 3000
       nodePort: 31687
+
+  # metrics-server: Kubernetes Metrics API (kubectl top, pods_top via MCP)
+  metricsServer:
+    enabled: true
+    image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
+
+  # kube-state-metrics: Pod/Deployment/ReplicaSet state-change time series
+  kubeStateMetrics:
+    enabled: true
+    image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0
 
 # Chaos Experiments Settings
 chaosExperiments:
