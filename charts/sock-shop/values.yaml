@@ -188,7 +188,7 @@ mcpTools:
   # Kubernetes MCP Server - exposes K8s + Litmus operations via MCP protocol
   # Disabled: deployed by agentcert-framework in litmus-exp namespace instead
   kubernetesMcpServer:
-    enabled: false
+    enabled: true
     name: kubernetes-mcp-server
     replicas: 1
     image: quay.io/containers/kubernetes_mcp_server:latest
@@ -218,7 +218,7 @@ mcpTools:
   # Prometheus MCP Server - exposes Prometheus queries via MCP protocol
   # Disabled: deployed by agentcert-framework in litmus-exp namespace instead
   prometheusMcpServer:
-    enabled: false
+    enabled: true
     name: prometheus-mcp-server
     replicas: 1
     image: agentcert/prometheus-mcp-server:latest
