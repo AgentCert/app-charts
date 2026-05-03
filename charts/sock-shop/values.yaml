@@ -226,7 +226,7 @@ mcpTools:
     # Prometheus connection settings (stored in ConfigMap)
     config:
       prometheusUrl: ""  # Auto-resolved to http://prometheus.<monitoring-ns>.svc.cluster.local:9090
-      transport: "sse"
+      transport: "http"
       bindHost: "0.0.0.0"
       bindPort: "9090"
       requestTimeout: "30"
