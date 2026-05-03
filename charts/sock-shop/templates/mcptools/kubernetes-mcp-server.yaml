@@ -11,17 +11,18 @@ metadata:
     chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 
 ---
-# ClusterRole with access to standard K8s resources + Litmus CRDs
+# Role with access to standard K8s resources + Litmus CRDs (namespace-scoped)
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
   name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+  namespace: {{ .Values.namespaces.sockShop }}
   labels:
     app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
 rules:
-  # Standard Kubernetes resources (read-only)
+  # Standard Kubernetes resources (read-only, namespace-scoped)
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "services", "configmaps", "secrets", "events", "namespaces", "nodes", "replicationcontrollers", "persistentvolumeclaims"]
+    resources: ["pods", "pods/log", "services", "configmaps", "secrets", "events", "replicationcontrollers", "persistentvolumeclaims"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
@@ -42,24 +43,21 @@ rules:
     verbs: ["get", "list", "watch"]
   # Argo Workflow CRDs (used by Litmus)
   - apiGroups: ["argoproj.io"]
-    resources: ["workflows", "cronworkflows", "workflowtemplates", "clusterworkflowtemplates", "workflowtasksets", "workflowtaskresults"]
+    resources: ["workflows", "cronworkflows", "workflowtemplates", "workflowtasksets", "workflowtaskresults"]
     verbs: ["get", "list", "watch"]
-  # CRD discovery (needed for MCP server to list available resource types)
-  - apiGroups: ["apiextensions.k8s.io"]
-    resources: ["customresourcedefinitions"]
-    verbs: ["get", "list"]
 
 ---
-# ClusterRoleBinding to bind ServiceAccount to ClusterRole
+# RoleBinding to bind ServiceAccount to Role (namespace-scoped)
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
   name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+  namespace: {{ .Values.namespaces.sockShop }}
   labels:
     app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
+  kind: Role
   name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
 subjects:
   - kind: ServiceAccount
