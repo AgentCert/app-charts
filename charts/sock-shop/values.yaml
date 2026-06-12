@@ -45,13 +45,13 @@ sockShop:
   carts:
     replicas: 1
     image: weaveworksdemos/carts:0.4.8
-    javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+    javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -XX:TieredStopAtLevel=1 -Djava.security.egd=file:/dev/urandom"
     resources:
       requests:
         cpu: 300m
         memory: 768Mi
       limits:
-        cpu: 500m
+        cpu: 1000m
         memory: 1536Mi
 
   # Carts DB
@@ -68,13 +68,13 @@ sockShop:
   orders:
     replicas: 1
     image: weaveworksdemos/orders:0.4.7
-    javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+    javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -XX:TieredStopAtLevel=1 -Djava.security.egd=file:/dev/urandom"
     resources:
       requests:
         cpu: 300m
         memory: 768Mi
       limits:
-        cpu: 500m
+        cpu: 1000m
         memory: 1536Mi
 
   # Orders DB
@@ -91,13 +91,13 @@ sockShop:
   shipping:
     replicas: 1
     image: weaveworksdemos/shipping:0.4.8
-    javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
+    javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -XX:TieredStopAtLevel=1 -Djava.security.egd=file:/dev/urandom"
     resources:
       requests:
         cpu: 300m
         memory: 768Mi
       limits:
-        cpu: 500m
+        cpu: 1000m
         memory: 1536Mi
 
   # User service
