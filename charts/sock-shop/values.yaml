@@ -48,7 +48,7 @@ sockShop:
     javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
     resources:
       requests:
-        cpu: 100m
+        cpu: 300m
         memory: 768Mi
       limits:
         cpu: 500m
@@ -71,7 +71,7 @@ sockShop:
     javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
     resources:
       requests:
-        cpu: 100m
+        cpu: 300m
         memory: 768Mi
       limits:
         cpu: 500m
@@ -94,7 +94,7 @@ sockShop:
     javaOpts: "-Xms96m -Xmx384m -XX:+UseG1GC -Djava.security.egd=file:/dev/urandom"
     resources:
       requests:
-        cpu: 100m
+        cpu: 300m
         memory: 768Mi
       limits:
         cpu: 500m
@@ -116,7 +116,7 @@ sockShop:
     image: weaveworksdemos/queue-master:0.3.1
     resources:
       requests:
-        cpu: 100m
+        cpu: 300m
         memory: 768Mi
       limits:
         cpu: 500m
