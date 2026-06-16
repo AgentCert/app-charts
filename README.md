@@ -13,7 +13,7 @@ templates.
 ![Helm](https://img.shields.io/badge/Helm-v3.14-0F1689?style=flat-square&logo=helm)
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-1.29-326CE5?style=flat-square&logo=kubernetes)
 ![Sock Shop](https://img.shields.io/badge/Sock_Shop-microservices-9B5DE5?style=flat-square)
-![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)
+![License](https://img.shields.io/badge/License-Apache%202.0-lightgrey?style=flat-square)
 
 </div>
 
@@ -246,4 +246,4 @@ ChaosCenter → install-app  (this repo)  → Sock Shop + monitoring + MCP serve
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE).
