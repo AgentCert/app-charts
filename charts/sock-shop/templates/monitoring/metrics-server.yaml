@@ -129,7 +129,7 @@ spec:
       priorityClassName: system-cluster-critical
       containers:
         - name: metrics-server
-          image: {{ .Values.monitoring.metricsServer.image }}
+          image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.monitoring.metricsServer.image) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           args:
             - --cert-dir=/tmp

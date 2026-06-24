@@ -149,7 +149,7 @@ spec:
       automountServiceAccountToken: true
       containers:
         - name: kube-state-metrics
-          image: {{ .Values.monitoring.kubeStateMetrics.image }}
+          image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.monitoring.kubeStateMetrics.image) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           args:
             - --resources=pods,deployments,replicasets,nodes,namespaces,daemonsets,jobs,statefulsets

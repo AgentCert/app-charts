@@ -22,7 +22,7 @@ spec:
         name: carts-db
     spec:
       containers:
-      - image: {{ .Values.sockShop.cartsDb.image }}
+      - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.cartsDb.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: carts-db
         ports:

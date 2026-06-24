@@ -22,7 +22,7 @@ spec:
         name: catalogue
     spec:
       containers:
-      - image: {{ .Values.sockShop.catalogue.image }}
+      - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.catalogue.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: catalogue
         ports:

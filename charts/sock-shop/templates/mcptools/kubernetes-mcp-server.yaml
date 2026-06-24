@@ -94,7 +94,7 @@ spec:
       serviceAccountName: {{ .Values.mcpTools.kubernetesMcpServer.name }}
       containers:
         - name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
-          image: {{ .Values.mcpTools.kubernetesMcpServer.image }}
+          image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.mcpTools.kubernetesMcpServer.image) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           args:
             {{- range .Values.mcpTools.kubernetesMcpServer.args }}

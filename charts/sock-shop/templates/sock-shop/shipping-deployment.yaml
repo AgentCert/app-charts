@@ -27,7 +27,7 @@ spec:
           value: zipkin.jaeger.svc.cluster.local
         - name: JAVA_OPTS
           value: {{ .Values.sockShop.shipping.javaOpts | quote }}
-        image: {{ .Values.sockShop.shipping.image }}
+        image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.shipping.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: shipping
         ports:

@@ -22,7 +22,7 @@ spec:
         name: orders-db
     spec:
       containers:
-      - image: {{ .Values.sockShop.ordersDb.image }}
+      - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.ordersDb.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: orders-db
         ports:

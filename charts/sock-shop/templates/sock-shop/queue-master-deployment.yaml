@@ -22,7 +22,7 @@ spec:
         name: queue-master
     spec:
       containers:
-      - image: {{ .Values.sockShop.queueMaster.image }}
+      - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.queueMaster.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: queue-master
         ports:

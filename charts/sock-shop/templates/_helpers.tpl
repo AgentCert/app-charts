@@ -68,3 +68,21 @@ Monitoring namespace
 {{- define "sock-shop-litmus.monitoringNamespace" -}}
 {{- .Values.namespaces.monitoring }}
 {{- end }}
+
+{{/*
+Resolves the full image reference.
+Usage: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry "weaveworksdemos/front-end:0.3.12") }}
+- imageRegistry is set, image is a plain Docker Hub image: "your-registry.com/weaveworksdemos/front-end:0.3.12"
+- imageRegistry is empty:                                  "weaveworksdemos/front-end:0.3.12" (as-is)
+- image already has a non-Docker-Hub registry prefix:      used as-is regardless of imageRegistry
+  (covers registry.k8s.io/*, quay.io/* — docker-remote only proxies Docker Hub)
+*/}}
+{{- define "sock-shop-litmus.image" -}}
+{{- $registry := index . 0 -}}
+{{- $image := index . 1 -}}
+{{- if and $registry (not (hasPrefix "registry.k8s.io/" $image)) (not (hasPrefix "quay.io/" $image)) -}}
+{{- printf "%s/%s" $registry $image -}}
+{{- else -}}
+{{- $image -}}
+{{- end -}}
+{{- end -}}

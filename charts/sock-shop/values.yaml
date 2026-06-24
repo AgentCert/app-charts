@@ -3,6 +3,7 @@
 # Global settings
 global:
   imagePullPolicy: IfNotPresent
+  imageRegistry: ""    # empty = use images as-is; set for Artifactory
 
 # Namespace configurations
 namespaces:

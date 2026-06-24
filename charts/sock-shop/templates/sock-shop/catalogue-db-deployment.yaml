@@ -27,7 +27,7 @@ spec:
           value: {{ .Values.sockShop.catalogueDb.mysql.rootPassword }}
         - name: MYSQL_DATABASE
           value: {{ .Values.sockShop.catalogueDb.mysql.database }}
-        image: {{ .Values.sockShop.catalogueDb.image }}
+        image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.catalogueDb.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: catalogue-db
         ports:

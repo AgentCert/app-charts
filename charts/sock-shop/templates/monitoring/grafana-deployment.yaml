@@ -16,7 +16,7 @@ spec:
       name: grafana
     spec:
       containers:
-      - image: {{ .Values.monitoring.grafana.image }}
+      - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.monitoring.grafana.image) }}
         imagePullPolicy: Always
         name: grafana
         ports:

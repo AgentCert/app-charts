@@ -22,7 +22,7 @@ spec:
         name: front-end
     spec:
       containers:
-      - image: {{ .Values.sockShop.frontEnd.image }}
+      - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.frontEnd.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: front-end
         ports:
