@@ -317,11 +317,47 @@ func cleanupStuckRelease(releaseName, namespace string) error {
 	uninstallCmd.Stdout = os.Stdout
 	uninstallCmd.Stderr = os.Stderr
 	if err := uninstallCmd.Run(); err != nil {
-		return fmt.Errorf("failed to uninstall stuck release %s: %w", releaseName, err)
+		// helm uninstall can fail when the release secret is corrupted or partially
+		// deleted. Fall back to wiping the Helm state secrets directly so that
+		// the subsequent "helm upgrade --install" sees no existing release and
+		// performs a clean install instead of failing with
+		// "'<release>' has no deployed releases".
+		log.Printf("helm uninstall failed (%v), falling back to deleting Helm state secrets", err)
+		if secretErr := deleteHelmStateSecrets(ctx, releaseName, namespace); secretErr != nil {
+			return fmt.Errorf("failed to uninstall stuck release %s: helm uninstall: %w; secret delete: %v", releaseName, err, secretErr)
+		}
+		log.Printf("Successfully removed Helm state secrets for release %s", releaseName)
+		return nil
 	}
 
 	log.Printf("Successfully cleaned up stuck release %s", releaseName)
 	return nil
+}
+
+// deleteHelmStateSecrets removes all Helm release secrets for a given release name,
+// which is the fallback when "helm uninstall" itself fails on a corrupted release.
+func deleteHelmStateSecrets(ctx context.Context, releaseName, namespace string) error {
+	listCmd := exec.CommandContext(ctx, "kubectl", "get", "secret",
+		"-n", namespace,
+		"-l", fmt.Sprintf("name=%s,owner=helm", releaseName),
+		"-o", "jsonpath={.items[*].metadata.name}")
+	out, err := listCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list Helm state secrets: %w", err)
+	}
+
+	names := strings.Fields(string(out))
+	if len(names) == 0 {
+		log.Printf("No Helm state secrets found for release %s in namespace %s", releaseName, namespace)
+		return nil
+	}
+
+	log.Printf("Deleting Helm state secrets: %s", strings.Join(names, ", "))
+	deleteArgs := append([]string{"delete", "secret", "-n", namespace}, names...)
+	deleteCmd := exec.CommandContext(ctx, "kubectl", deleteArgs...)
+	deleteCmd.Stdout = os.Stdout
+	deleteCmd.Stderr = os.Stderr
+	return deleteCmd.Run()
 }
 
 // ensureNamespace creates the namespace if it doesn't already exist and ensures
