@@ -35,16 +35,22 @@ spec:
           limits:
             cpu: {{ .Values.sockShop.queueMaster.resources.limits.cpu }}
             memory: {{ .Values.sockShop.queueMaster.resources.limits.memory }}
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 80
+          failureThreshold: 200
+          periodSeconds: 3
         livenessProbe:
           httpGet:
             path: /health
             port: 80
-          initialDelaySeconds: 300
+          initialDelaySeconds: 30
           periodSeconds: 3
         readinessProbe:
           httpGet:
             path: /health
             port: 80
-          initialDelaySeconds: 180
+          initialDelaySeconds: 10
           periodSeconds: 3
 {{- end }}
