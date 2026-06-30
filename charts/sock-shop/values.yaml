@@ -3,7 +3,7 @@
 # Global settings
 global:
   imagePullPolicy: IfNotPresent
-  imageRegistry: ""    # empty = use images as-is; set for Artifactory
+  imageRegistry: "infyartifactory.jfrog.io/docker-local"    # JFrog Artifactory
 
 # Namespace configurations
 namespaces:
