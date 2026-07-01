@@ -21,6 +21,8 @@ spec:
         app: sock-shop
         name: carts
     spec:
+      imagePullSecrets:
+        - name: jfrog-registry
       containers:
       - env:
         - name: ZIPKIN

@@ -21,6 +21,8 @@ spec:
         app: sock-shop
         name: catalogue
     spec:
+      imagePullSecrets:
+        - name: jfrog-registry
       containers:
       - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.catalogue.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}

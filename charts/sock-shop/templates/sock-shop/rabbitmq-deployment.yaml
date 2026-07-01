@@ -21,6 +21,8 @@ spec:
         app: sock-shop
         name: rabbitmq
     spec:
+      imagePullSecrets:
+        - name: jfrog-registry
       containers:
       - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.rabbitmq.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}

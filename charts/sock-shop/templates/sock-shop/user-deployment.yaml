@@ -21,6 +21,8 @@ spec:
         app: sock-shop
         name: user
     spec:
+      imagePullSecrets:
+        - name: jfrog-registry
       containers:
       - env:
         - name: MONGO_HOST
