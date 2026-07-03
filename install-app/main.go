@@ -29,19 +29,19 @@ func (s *setFlags) Set(val string) error {
 }
 
 type Config struct {
-	FolderName    string
-	ReleaseName   string
-	Namespace     string
-	ChartsPath    string
-	ValuesFile    string
-	SetValues     setFlags // supports multiple --set flags
-	DryRun        bool
-	Wait          bool
-	Timeout       string
-	CreateNS      bool
-	Upgrade       bool
-	KubeConfig    string
-	KubeContext   string
+	FolderName  string
+	ReleaseName string
+	Namespace   string
+	ChartsPath  string
+	ValuesFile  string
+	SetValues   setFlags // supports multiple --set flags
+	DryRun      bool
+	Wait        bool
+	Timeout     string
+	CreateNS    bool
+	Upgrade     bool
+	KubeConfig  string
+	KubeContext string
 }
 
 func main() {
@@ -138,6 +138,10 @@ func installChart(config *Config) error {
 			log.Printf("Warning: failed to ensure namespace %s: %v", config.Namespace, err)
 		}
 	}
+
+	// Copy jfrog-registry imagePullSecret from kube-system into the target namespace
+	// so pods can pull images from JFrog without waiting for jfrog-secret-sync.
+	ensureImagePullSecret(config.Namespace)
 
 	// Clean up any stuck Helm release before attempting install.
 	if err := cleanupStuckRelease(config.ReleaseName, config.Namespace); err != nil {
@@ -558,4 +562,70 @@ func ListAvailableCharts(chartsPath string) ([]string, error) {
 	}
 
 	return charts, nil
+}
+
+// ensureImagePullSecret copies the jfrog-registry secret from kube-system into the
+// target namespace so that pods can pull images immediately without waiting for
+// the jfrog-secret-sync controller's 60s reconciliation cycle.
+func ensureImagePullSecret(namespace string) {
+	secretName := "jfrog-registry"
+	sourceNS := "kube-system"
+
+	// Check if secret already exists in target namespace
+	checkCmd := exec.Command("kubectl", "get", "secret", secretName, "-n", namespace)
+	if checkCmd.Run() == nil {
+		log.Printf("Secret %s already exists in namespace %s", secretName, namespace)
+		return
+	}
+
+	// Get the dockerconfigjson from kube-system
+	getCmd := exec.Command("kubectl", "get", "secret", secretName, "-n", sourceNS,
+		"-o", "jsonpath={.data.\\.dockerconfigjson}")
+	out, err := getCmd.Output()
+	if err != nil || len(out) == 0 {
+		log.Printf("Warning: could not read %s from %s: %v", secretName, sourceNS, err)
+		return
+	}
+
+	// Create the secret in target namespace using the same dockerconfigjson
+	createCmd := exec.Command("kubectl", "create", "secret", "generic", secretName,
+		"--namespace", namespace,
+		"--type=kubernetes.io/dockerconfigjson",
+		"--from-literal=.dockerconfigjson=PLACEHOLDER",
+		"--dry-run=client", "-o", "yaml")
+	yamlOut, err := createCmd.Output()
+	if err != nil {
+		log.Printf("Warning: failed to generate secret YAML: %v", err)
+		return
+	}
+
+	// Use kubectl apply with the raw secret data patched in via a simpler approach
+	applyCmd := exec.Command("kubectl", "get", "secret", secretName, "-n", sourceNS,
+		"-o", "yaml")
+	secretYAML, err := applyCmd.Output()
+	if err != nil {
+		log.Printf("Warning: failed to get source secret: %v", err)
+		return
+	}
+
+	// Modify namespace in the YAML and apply
+	modifiedYAML := strings.Replace(string(secretYAML), "namespace: "+sourceNS, "namespace: "+namespace, 1)
+	// Remove resourceVersion and uid to allow creation in new namespace
+	lines := strings.Split(modifiedYAML, "\n")
+	var filtered []string
+	for _, line := range lines {
+		if strings.Contains(line, "resourceVersion:") || strings.Contains(line, "uid:") || strings.Contains(line, "creationTimestamp:") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	_ = yamlOut // suppress unused
+
+	applyFinal := exec.Command("kubectl", "apply", "-f", "-")
+	applyFinal.Stdin = strings.NewReader(strings.Join(filtered, "\n"))
+	if output, err := applyFinal.CombinedOutput(); err != nil {
+		log.Printf("Warning: failed to apply secret to %s: %v (%s)", namespace, err, string(output))
+	} else {
+		log.Printf("Copied %s secret to namespace %s", secretName, namespace)
+	}
 }
