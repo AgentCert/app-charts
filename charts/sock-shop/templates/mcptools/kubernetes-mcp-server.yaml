@@ -92,6 +92,8 @@ spec:
         app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
     spec:
       serviceAccountName: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+      imagePullSecrets:
+        - name: jfrog-registry
       containers:
         - name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
           image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.mcpTools.kubernetesMcpServer.image) }}
