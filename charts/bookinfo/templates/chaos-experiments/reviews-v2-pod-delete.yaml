@@ -1,0 +1,28 @@
+{{- if and .Values.chaosExperiments.enabled .Values.chaosExperiments.reviewsV2PodDelete.enabled }}
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: reviews-v2-pod-delete
+  namespace: {{ include "bookinfo.litmusNamespace" . }}
+spec:
+  annotationCheck: 'false'
+  engineState: 'active'
+  appinfo:
+    appns: '{{ include "bookinfo.appNamespace" . }}'
+    applabel: 'app=reviews,version=v2'
+    appkind: 'deployment'
+  chaosServiceAccount: litmus-admin
+  monitoring: true
+  jobCleanUpPolicy: 'retain'
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: '{{ .Values.chaosExperiments.reviewsV2PodDelete.totalChaosDuration }}'
+            - name: CHAOS_INTERVAL
+              value: '{{ .Values.chaosExperiments.reviewsV2PodDelete.chaosInterval }}'
+            - name: FORCE
+              value: '{{ .Values.chaosExperiments.reviewsV2PodDelete.force }}'
+{{- end }}

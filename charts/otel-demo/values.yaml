@@ -1,0 +1,253 @@
+# Default values for the otel-demo chart.
+#
+# This app is only distributed as a Helm chart upstream (no flat manifests),
+# and is a ~20-microservice, multi-language application. Rather than
+# hand-transcribe each service's Deployment (high risk of silently wrong
+# images/env/ports), this chart takes a different shape than sock-shop and
+# bookinfo: it declares the official upstream chart as a dependency, pinned
+# to the exact version ITBench itself uses for its SRE scenarios
+# (oci://ghcr.io/open-telemetry/opentelemetry-helm-charts/opentelemetry-demo
+# @ 0.40.9 — see ITBench scenarios/sre/project/roles/applications/defaults/
+# main/managers.yaml), and layers ACE's namespace/litmus/monitoring/mcpTools
+# conventions on top, the same way sock-shop and bookinfo do.
+#
+# The `opentelemetry-demo:` block below passes values straight through to
+# the upstream subchart. The per-component resource limits are carried over
+# unchanged from ITBench's own proven values
+# (scenarios/sre/project/roles/applications/templates/helm/otel_demo/values.j2)
+# since those are the values ITBench's published scenario results were
+# measured against.
+#
+# Deviation from ITBench's own values.j2: ITBench points the bundled
+# OTel Collector's exporters at their own ClickHouse + external Jaeger
+# backend. That backend doesn't exist in ACE. ACE's Langfuse instance
+# ingests the *agent's* LLM/tool-call traces via LiteLLM's Langfuse
+# integration (see docker-compose.yml LANGFUSE_HOST wiring under litellm) —
+# it is not a general OTLP sink for arbitrary application traces, so wiring
+# otel-demo's internal collector to it would be incorrect, not just
+# unconfigured. This chart instead disables the subchart's bundled
+# jaeger/grafana/prometheus/opensearch (avoiding duplicate/conflicting
+# services with ACE's own per-app monitoring stack below, same as ITBench
+# does for its own reasons) and leaves the collector's trace/log exporters
+# on the subchart's own defaults. otel-demo's *internal* service-to-service
+# traces are therefore not currently persisted anywhere outside the
+# cluster — only its Prometheus metrics (scraped by ACE's own Prometheus,
+# same as bookinfo/sock-shop) and the agent's own traces (via agent-sidecar)
+# are. Wiring internal app traces into Langfuse or another sink is a
+# follow-up, not required for fault-injection certification experiments.
+
+# Global settings
+global:
+  imagePullPolicy: IfNotPresent
+
+# Namespace configurations
+namespaces:
+  otelDemo: otel-demo
+  litmus: litmus
+  monitoring: monitoring
+
+otelDemo:
+  enabled: true
+
+# Values passed through to the `opentelemetry-demo` subchart.
+opentelemetry-demo:
+  components:
+    accounting:
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+      resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+        requests:
+          cpu: 250m
+          memory: 256Mi
+    ad:
+      resources:
+        limits:
+          cpu: 150m
+          memory: 512Mi
+        requests:
+          cpu: 50m
+          memory: 256Mi
+    fraud-detection:
+      resources:
+        limits:
+          memory: 512Mi
+        requests:
+          memory: 256Mi
+    image-provider:
+      podSecurityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+    kafka:
+      resources:
+        limits:
+          memory: 1024Mi
+        requests:
+          memory: 512Mi
+    load-generator:
+      envOverrides:
+        - name: LOCUST_BROWSER_TRAFFIC_ENABLED
+          value: "false"
+        - name: LOCUST_SPAWN_RATE
+          value: "5"
+        - name: LOCUST_USERS
+          value: "50"
+    product-catalog:
+      resources:
+        limits:
+          memory: 160Mi
+    recommendation:
+      resources:
+        limits:
+          cpu: 200m
+          memory: 512Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+    valkey-cart:
+      podSecurityContext:
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 999
+  opentelemetry-collector:
+    mode: deployment
+    presets:
+      clusterMetrics:
+        enabled: false
+      hostMetrics:
+        enabled: false
+      kubeletMetrics:
+        enabled: false
+  grafana:
+    enabled: false
+  jaeger:
+    enabled: false
+  opensearch:
+    enabled: false
+  prometheus:
+    enabled: false
+
+# LitmusChaos Settings
+litmus:
+  enabled: false
+  chaosExporter:
+    enabled: true
+    image: litmuschaos/chaos-exporter:1.13.3
+    replicas: 1
+    service:
+      port: 8080
+
+# Monitoring Settings (ACE's own Prometheus/Grafana, independent of the
+# subchart's disabled bundled ones — see header note above)
+monitoring:
+  enabled: true
+
+  prometheus:
+    replicas: 1
+    image: prom/prometheus:v2.25.0
+    retention: 360h
+    service:
+      type: NodePort
+      port: 9090
+      nodePort: 31090
+    kubeletProxy: true
+
+  grafana:
+    replicas: 1
+    image: grafana/grafana:latest
+    service:
+      type: NodePort
+      port: 3000
+      nodePort: 31687
+
+  metricsServer:
+    enabled: true
+    image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
+
+  kubeStateMetrics:
+    enabled: true
+    image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0
+
+# Chaos Experiments Settings
+chaosExperiments:
+  enabled: false
+
+  frontendPodDelete:
+    enabled: false
+    totalChaosDuration: "30"
+    chaosInterval: "10"
+    force: "false"
+
+  productCatalogPodDelete:
+    enabled: false
+    totalChaosDuration: "30"
+    chaosInterval: "10"
+    force: "false"
+
+# MCP Tools Settings
+mcpTools:
+  kubernetesMcpServer:
+    enabled: true
+    name: kubernetes-mcp-server
+    replicas: 1
+    image: quay.io/containers/kubernetes_mcp_server:latest
+    port: 8081
+    args:
+      - "--port"
+      - "8081"
+      - "--stateless"
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+        ephemeralStorage: "200Mi"
+      limits:
+        memory: "256Mi"
+        cpu: "500m"
+        ephemeralStorage: "500Mi"
+    securityContext:
+      runAsUser: 65532
+      allowPrivilegeEscalation: false
+    service:
+      type: ClusterIP
+      port: 8081
+      targetPort: 8081
+
+  prometheusMcpServer:
+    enabled: true
+    name: prometheus-mcp-server
+    replicas: 1
+    image: agentcert/prometheus-mcp-server:latest
+    port: 9090
+    config:
+      prometheusUrl: ""
+      transport: "http"
+      bindHost: "0.0.0.0"
+      bindPort: "9090"
+      requestTimeout: "30"
+      sslVerify: "true"
+      disableLinks: "false"
+    auth:
+      placeholder: "unused"
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+        ephemeralStorage: "200Mi"
+      limits:
+        memory: "256Mi"
+        cpu: "500m"
+        ephemeralStorage: "500Mi"
+    securityContext:
+      runAsUser: 65532
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+    service:
+      type: NodePort
+      port: 8083
+      targetPort: 9090
+      nodePort: 31085

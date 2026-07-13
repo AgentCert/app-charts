@@ -1,0 +1,115 @@
+{{- if .Values.bookInfo.enabled }}
+# Upstream (istio/istio samples/bookinfo) leaves this Service as a bare
+# ClusterIP and exposes north-south access via an Istio Gateway API Gateway
+# instead. ACE has no service-mesh layer (see values.yaml note), so this
+# Service is made externally reachable directly, the same way sock-shop's
+# front-end-service.yaml exposes front-end.
+apiVersion: v1
+kind: Service
+metadata:
+  name: productpage
+  labels:
+    app: productpage
+    service: productpage
+  namespace: {{ include "bookinfo.appNamespace" . }}
+spec:
+  type: {{ .Values.bookInfo.productpage.service.type }}
+  ports:
+  - port: {{ .Values.bookInfo.productpage.service.port }}
+    targetPort: {{ .Values.bookInfo.productpage.service.targetPort }}
+    nodePort: {{ .Values.bookInfo.productpage.service.nodePort }}
+    name: http
+  selector:
+    app: productpage
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bookinfo-productpage
+  labels:
+    account: productpage
+  namespace: {{ include "bookinfo.appNamespace" . }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: productpage-v1
+  namespace: {{ include "bookinfo.appNamespace" . }}
+spec:
+  ports:
+  - port: 9080
+    name: http
+  selector:
+    app: productpage
+    version: v1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    litmuschaos.io/chaos: "true"
+  labels:
+    app: productpage
+    version: v1
+  name: productpage-v1
+  namespace: {{ include "bookinfo.appNamespace" . }}
+spec:
+  replicas: {{ .Values.bookInfo.productpage.replicas }}
+  selector:
+    matchLabels:
+      app: productpage
+      version: v1
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9080"
+        prometheus.io/path: "/metrics"
+      labels:
+        app: productpage
+        version: v1
+    spec:
+      serviceAccountName: bookinfo-productpage
+      containers:
+      - name: productpage
+        image: {{ .Values.bookInfo.productpage.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - containerPort: 9080
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+---
+{{- if .Values.bookInfo.loadGenerator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: load-generator
+    app.kubernetes.io/part-of: bookinfo
+  name: load-generator-productpage
+  namespace: {{ include "bookinfo.appNamespace" . }}
+spec:
+  replicas: {{ .Values.bookInfo.loadGenerator.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: load-generator
+      app.kubernetes.io/part-of: bookinfo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: load-generator
+        app.kubernetes.io/part-of: bookinfo
+    spec:
+      containers:
+      - name: generator
+        image: {{ .Values.bookInfo.loadGenerator.image }}
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - "while true; do curl -s -o /dev/null http://productpage:{{ .Values.bookInfo.productpage.service.port }}/productpage; sleep {{ .Values.bookInfo.loadGenerator.intervalSeconds }}; done"
+{{- end }}
+{{- end }}

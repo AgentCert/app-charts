@@ -1,0 +1,20 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alertrules
+  namespace: {{ include "ace-otel-demo.monitoringNamespace" . }}
+data:
+  alert.rules: |
+    groups:
+    - name: OpenTelemetry Demo Alert
+      rules:
+        - alert: OtelDemoTargetDown
+          expr: up{namespace="{{ include "ace-otel-demo.appNamespace" . }}"} == 0
+          for: 2m
+          labels:
+            severity: "slack"
+          annotations:
+            summary: "OpenTelemetry Demo scrape target down"
+            description: "Target {{`{{ $labels.job }}`}}/{{`{{ $labels.instance }}`}} in otel-demo has been down for more than 2 minutes."
+{{- end }}

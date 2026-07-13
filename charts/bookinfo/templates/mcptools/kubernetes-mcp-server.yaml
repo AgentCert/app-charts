@@ -1,0 +1,153 @@
+{{- if .Values.mcpTools.kubernetesMcpServer.enabled }}
+---
+# ServiceAccount for Kubernetes MCP Server
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+  namespace: {{ .Values.namespaces.bookInfo }}
+  labels:
+    app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+
+---
+# Role with access to standard K8s resources + Litmus CRDs (namespace-scoped)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+  namespace: {{ .Values.namespaces.bookInfo }}
+  labels:
+    app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+rules:
+  # Standard Kubernetes resources (read-only, namespace-scoped)
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "configmaps", "secrets", "events", "replicationcontrollers", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies", "ingresses"]
+    verbs: ["get", "list", "watch"]
+  # Read-only access to the aggregated metrics API (served by metrics-server).
+  # Only `pods` is granted — `nodes.metrics.k8s.io` is cluster-scoped and cannot
+  # be granted by a namespace-scoped Role; the agent's prompt steers away from
+  # `nodes_top` accordingly.
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  # Litmus Chaos CRDs
+  - apiGroups: ["litmuschaos.io"]
+    resources: ["chaosengines", "chaosexperiments", "chaosresults"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Litmus EventTracker CRDs
+  - apiGroups: ["eventtracker.litmuschaos.io"]
+    resources: ["eventtrackerpolicies"]
+    verbs: ["get", "list", "watch"]
+  # Argo Workflow CRDs (used by Litmus)
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflows", "cronworkflows", "workflowtemplates", "workflowtasksets", "workflowtaskresults"]
+    verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding to bind ServiceAccount to Role (namespace-scoped)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+  namespace: {{ .Values.namespaces.bookInfo }}
+  labels:
+    app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+    namespace: {{ .Values.namespaces.bookInfo }}
+
+---
+# Deployment for Kubernetes MCP Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+  namespace: {{ .Values.namespaces.bookInfo }}
+  labels:
+    app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  replicas: {{ .Values.mcpTools.kubernetesMcpServer.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+    spec:
+      serviceAccountName: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+      containers:
+        - name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+          image: {{ .Values.mcpTools.kubernetesMcpServer.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            {{- range .Values.mcpTools.kubernetesMcpServer.args }}
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - containerPort: {{ .Values.mcpTools.kubernetesMcpServer.port }}
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              memory: {{ .Values.mcpTools.kubernetesMcpServer.resources.requests.memory | quote }}
+              cpu: {{ .Values.mcpTools.kubernetesMcpServer.resources.requests.cpu | quote }}
+              ephemeral-storage: {{ .Values.mcpTools.kubernetesMcpServer.resources.requests.ephemeralStorage | quote }}
+            limits:
+              memory: {{ .Values.mcpTools.kubernetesMcpServer.resources.limits.memory | quote }}
+              cpu: {{ .Values.mcpTools.kubernetesMcpServer.resources.limits.cpu | quote }}
+              ephemeral-storage: {{ .Values.mcpTools.kubernetesMcpServer.resources.limits.ephemeralStorage | quote }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            runAsUser: {{ .Values.mcpTools.kubernetesMcpServer.securityContext.runAsUser }}
+            allowPrivilegeEscalation: {{ .Values.mcpTools.kubernetesMcpServer.securityContext.allowPrivilegeEscalation }}
+
+---
+# Service for Kubernetes MCP Server
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+  namespace: {{ .Values.namespaces.bookInfo }}
+  labels:
+    app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+spec:
+  type: {{ .Values.mcpTools.kubernetesMcpServer.service.type }}
+  ports:
+    - port: {{ .Values.mcpTools.kubernetesMcpServer.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+      {{- if and (eq .Values.mcpTools.kubernetesMcpServer.service.type "NodePort") .Values.mcpTools.kubernetesMcpServer.service.nodePort }}
+      nodePort: {{ .Values.mcpTools.kubernetesMcpServer.service.nodePort }}
+      {{- end }}
+  selector:
+    app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+{{- end }}

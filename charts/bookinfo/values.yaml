@@ -1,0 +1,199 @@
+# Default values for the bookinfo chart.
+#
+# Source of truth for the application manifests: istio/istio git tag 1.30.2,
+# samples/bookinfo/platform/kube/{bookinfo.yaml,bookinfo-versions.yaml}.
+# The upstream sample also ships a Gateway API bookinfo-gateway.yaml that
+# requires `gatewayClassName: istio` (an Istio-managed Gateway API
+# implementation). ACE's cluster stack does not provision Istio/service-mesh
+# today (see sock-shop, which is also mesh-free), so productpage is exposed
+# the same way sock-shop's front-end is: a plain Kubernetes Service instead
+# of an Istio Gateway. This means mesh-dependent ITBench fault types
+# (mTLS enforcement, Istio authorization-policy faults, ambient-mode faults)
+# are out of scope until Istio is added as a cluster prerequisite.
+
+# Global settings
+global:
+  imagePullPolicy: IfNotPresent
+
+# Namespace configurations
+namespaces:
+  bookInfo: book-info
+  litmus: litmus
+  monitoring: monitoring
+
+# Bookinfo Application Settings
+bookInfo:
+  enabled: true
+
+  details:
+    replicas: 1
+    image: registry.istio.io/release/examples-bookinfo-details-v1:1.20.3
+
+  ratings:
+    replicas: 1
+    image: registry.istio.io/release/examples-bookinfo-ratings-v1:1.20.3
+
+  reviews:
+    v1:
+      replicas: 1
+      image: registry.istio.io/release/examples-bookinfo-reviews-v1:1.20.3
+    v2:
+      replicas: 1
+      image: registry.istio.io/release/examples-bookinfo-reviews-v2:1.20.3
+    v3:
+      replicas: 1
+      image: registry.istio.io/release/examples-bookinfo-reviews-v3:1.20.3
+
+  productpage:
+    replicas: 1
+    image: registry.istio.io/release/examples-bookinfo-productpage-v1:1.20.3
+    service:
+      type: LoadBalancer
+      port: 9080
+      targetPort: 9080
+      nodePort: 30002
+
+  # Simple in-cluster load generator against productpage, mirroring ITBench's
+  # own load-generator-product-page Deployment (see install_book_info.yaml).
+  loadGenerator:
+    enabled: true
+    replicas: 1
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    intervalSeconds: 5
+
+# LitmusChaos Settings
+# Set enabled: false since LitmusChaos is installed separately
+litmus:
+  enabled: false
+
+  # Chaos Exporter for metrics
+  chaosExporter:
+    enabled: true
+    image: litmuschaos/chaos-exporter:1.13.3
+    replicas: 1
+    service:
+      port: 8080
+
+# Monitoring Settings
+# Set enabled: true to deploy Prometheus and Grafana
+monitoring:
+  enabled: true
+
+  # Prometheus
+  prometheus:
+    replicas: 1
+    image: prom/prometheus:v2.25.0
+    retention: 360h
+    service:
+      type: NodePort
+      port: 9090
+      nodePort: 31090
+    # Route node + cadvisor scrapes through the apiserver proxy. Required on
+    # kind/minikube where kubelet TLS cert SANs don't match kube-sd's __address__.
+    # On larger clusters set to false to scrape kubelet :10250 directly.
+    kubeletProxy: true
+
+  # Grafana
+  grafana:
+    replicas: 1
+    image: grafana/grafana:latest
+    service:
+      type: NodePort
+      port: 3000
+      nodePort: 31687
+
+  # metrics-server: Kubernetes Metrics API (kubectl top, pods_top via MCP)
+  metricsServer:
+    enabled: true
+    image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
+
+  # kube-state-metrics: Pod/Deployment/ReplicaSet state-change time series
+  kubeStateMetrics:
+    enabled: true
+    image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0
+
+# Chaos Experiments Settings
+chaosExperiments:
+  enabled: false  # Set to true to deploy chaos experiments
+
+  # Productpage pod-delete experiment
+  productpagePodDelete:
+    enabled: false
+    totalChaosDuration: "30"
+    chaosInterval: "10"
+    force: "false"
+
+  # Reviews-v2 pod-delete experiment
+  reviewsV2PodDelete:
+    enabled: false
+    totalChaosDuration: "30"
+    chaosInterval: "10"
+    force: "false"
+
+# MCP Tools Settings
+# Tools for Model Context Protocol integration (using public MCP server images)
+mcpTools:
+  # Kubernetes MCP Server - exposes K8s + Litmus operations via MCP protocol
+  kubernetesMcpServer:
+    enabled: true
+    name: kubernetes-mcp-server
+    replicas: 1
+    image: quay.io/containers/kubernetes_mcp_server:latest
+    port: 8081
+    args:
+      - "--port"
+      - "8081"
+      - "--stateless"
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+        ephemeralStorage: "200Mi"
+      limits:
+        memory: "256Mi"
+        cpu: "500m"
+        ephemeralStorage: "500Mi"
+    securityContext:
+      runAsUser: 65532
+      allowPrivilegeEscalation: false
+    service:
+      type: ClusterIP
+      port: 8081
+      targetPort: 8081
+
+  # Prometheus MCP Server - exposes Prometheus queries via MCP protocol
+  prometheusMcpServer:
+    enabled: true
+    name: prometheus-mcp-server
+    replicas: 1
+    image: agentcert/prometheus-mcp-server:latest
+    port: 9090
+    config:
+      prometheusUrl: ""  # Auto-resolved to http://prometheus.<monitoring-ns>.svc.cluster.local:9090
+      transport: "http"
+      bindHost: "0.0.0.0"
+      bindPort: "9090"
+      requestTimeout: "30"
+      sslVerify: "true"
+      disableLinks: "false"
+    auth:
+      placeholder: "unused"
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+        ephemeralStorage: "200Mi"
+      limits:
+        memory: "256Mi"
+        cpu: "500m"
+        ephemeralStorage: "500Mi"
+    securityContext:
+      runAsUser: 65532
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+    service:
+      type: NodePort
+      port: 8083
+      targetPort: 9090
+      nodePort: 31084

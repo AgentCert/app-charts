@@ -1,0 +1,9 @@
+apiVersion: v2
+name: bookinfo
+description: >-
+  Helm chart for deploying Istio's Bookinfo sample application (details,
+  ratings, reviews-v1/v2/v3, productpage), vendored from istio/istio at the
+  tag ITBench pins for its SRE scenarios.
+type: application
+version: 0.1.0
+appVersion: "1.30.2"

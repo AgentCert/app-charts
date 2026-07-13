@@ -1,0 +1,67 @@
+{{- if .Values.bookInfo.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratings
+  labels:
+    app: ratings
+    service: ratings
+  namespace: {{ include "bookinfo.appNamespace" . }}
+spec:
+  ports:
+  - port: 9080
+    name: http
+  selector:
+    app: ratings
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bookinfo-ratings
+  labels:
+    account: ratings
+  namespace: {{ include "bookinfo.appNamespace" . }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratings-v1
+  namespace: {{ include "bookinfo.appNamespace" . }}
+spec:
+  ports:
+  - port: 9080
+    name: http
+  selector:
+    app: ratings
+    version: v1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    litmuschaos.io/chaos: "true"
+  labels:
+    app: ratings
+    version: v1
+  name: ratings-v1
+  namespace: {{ include "bookinfo.appNamespace" . }}
+spec:
+  replicas: {{ .Values.bookInfo.ratings.replicas }}
+  selector:
+    matchLabels:
+      app: ratings
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: ratings
+        version: v1
+    spec:
+      serviceAccountName: bookinfo-ratings
+      containers:
+      - name: ratings
+        image: {{ .Values.bookInfo.ratings.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - containerPort: 9080
+{{- end }}

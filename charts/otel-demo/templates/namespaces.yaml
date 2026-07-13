@@ -1,0 +1,26 @@
+{{- if .Values.otelDemo.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "ace-otel-demo.appNamespace" . }}
+  labels:
+    {{- include "ace-otel-demo.labels" . | nindent 4 }}
+{{- end }}
+---
+{{- if .Values.litmus.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "ace-otel-demo.litmusNamespace" . }}
+  labels:
+    {{- include "ace-otel-demo.labels" . | nindent 4 }}
+{{- end }}
+---
+{{- if .Values.monitoring.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "ace-otel-demo.monitoringNamespace" . }}
+  labels:
+    {{- include "ace-otel-demo.labels" . | nindent 4 }}
+{{- end }}

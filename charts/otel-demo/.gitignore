@@ -1,0 +1,3 @@
+# Downloaded Helm dependency archives — regenerated via `helm dependency build`.
+# Chart.lock is committed and pins the exact resolved version/digest.
+charts/*.tgz

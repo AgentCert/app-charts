@@ -58,3 +58,65 @@ spec:
           description: "User account service"
         - name: user-db
           description: "User database (MongoDB)"
+    - name: bookinfo
+      displayName: Bookinfo
+      description: "Istio's Bookinfo sample — a book-review microservices demo with details, ratings, and three reviews versions (v1/v2/v3) fronted by productpage. Vendored from istio/istio (the tag ITBench pins for its SRE scenarios), deployed without the Istio service mesh layer."
+      version: "1.30.2"
+      namespace: book-info
+      microservices:
+        - name: details
+          description: "Book details service"
+        - name: ratings
+          description: "Book ratings service"
+        - name: reviews-v1
+          description: "Reviews service (no ratings)"
+        - name: reviews-v2
+          description: "Reviews service (black-star ratings)"
+        - name: reviews-v3
+          description: "Reviews service (red-star ratings)"
+        - name: productpage
+          description: "Web frontend aggregating details, reviews, and ratings"
+    - name: otel-demo
+      displayName: OpenTelemetry Demo (Astronomy Shop)
+      description: "The OpenTelemetry Demo — a ~20-service polyglot e-commerce microservices demo, wrapping the official upstream Helm chart at the version ITBench pins for its SRE scenarios."
+      version: "0.40.9"
+      namespace: otel-demo
+      microservices:
+        - name: frontend
+          description: "Web frontend"
+        - name: frontend-proxy
+          description: "Envoy proxy fronting the demo"
+        - name: cart
+          description: "Shopping cart service"
+        - name: checkout
+          description: "Checkout orchestration service"
+        - name: currency
+          description: "Currency conversion service"
+        - name: email
+          description: "Order confirmation email service"
+        - name: payment
+          description: "Payment service"
+        - name: shipping
+          description: "Shipping quote/service"
+        - name: product-catalog
+          description: "Product catalogue service"
+        - name: recommendation
+          description: "Product recommendation service"
+        - name: ad
+          description: "Advertisement service"
+        - name: quote
+          description: "Shipping quote calculation service"
+        - name: accounting
+          description: "Order accounting service"
+        - name: fraud-detection
+          description: "Fraud detection service"
+        - name: image-provider
+          description: "Static product image server"
+        - name: kafka
+          description: "Message broker used by checkout/accounting/fraud-detection"
+        - name: flagd
+          description: "Feature-flag service used to trigger demo fault scenarios"
+        - name: load-generator
+          description: "Locust-based synthetic load generator"
+        - name: valkey-cart
+          description: "Cart cache (Valkey/Redis-compatible)"

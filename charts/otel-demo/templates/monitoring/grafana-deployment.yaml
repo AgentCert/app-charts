@@ -1,0 +1,50 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: {{ include "ace-otel-demo.monitoringNamespace" . }}
+spec:
+  replicas: {{ .Values.monitoring.grafana.replicas }}
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+      name: grafana
+    spec:
+      containers:
+      - image: {{ .Values.monitoring.grafana.image }}
+        imagePullPolicy: Always
+        name: grafana
+        ports:
+        - containerPort: 3000
+          name: grafana
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /var/lib/grafana
+          name: grafana-storage
+        - mountPath: /etc/grafana/provisioning/datasources
+          name: grafana-datasources
+          readOnly: true
+        - mountPath: /etc/grafana/provisioning/dashboards
+          name: grafana-dashboard-provider
+          readOnly: true
+        - mountPath: /var/lib/grafana/dashboards
+          name: grafana-dashboards
+          readOnly: true
+      volumes:
+      - emptyDir: {}
+        name: grafana-storage
+      - configMap:
+          name: grafana-datasources
+        name: grafana-datasources
+      - configMap:
+          name: grafana-dashboard-provider
+        name: grafana-dashboard-provider
+      - configMap:
+          name: grafana-dashboard-otel-demo
+        name: grafana-dashboards
+{{- end }}

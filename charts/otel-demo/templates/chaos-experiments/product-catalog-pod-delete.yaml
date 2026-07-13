@@ -1,0 +1,28 @@
+{{- if and .Values.chaosExperiments.enabled .Values.chaosExperiments.productCatalogPodDelete.enabled }}
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: product-catalog-pod-delete
+  namespace: {{ include "ace-otel-demo.litmusNamespace" . }}
+spec:
+  annotationCheck: 'false'
+  engineState: 'active'
+  appinfo:
+    appns: '{{ include "ace-otel-demo.appNamespace" . }}'
+    applabel: 'opentelemetry.io/name=product-catalog'
+    appkind: 'deployment'
+  chaosServiceAccount: litmus-admin
+  monitoring: true
+  jobCleanUpPolicy: 'retain'
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: '{{ .Values.chaosExperiments.productCatalogPodDelete.totalChaosDuration }}'
+            - name: CHAOS_INTERVAL
+              value: '{{ .Values.chaosExperiments.productCatalogPodDelete.chaosInterval }}'
+            - name: FORCE
+              value: '{{ .Values.chaosExperiments.productCatalogPodDelete.force }}'
+{{- end }}
