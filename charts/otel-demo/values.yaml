@@ -212,9 +212,10 @@ mcpTools:
       runAsUser: 65532
       allowPrivilegeEscalation: false
     service:
-      type: ClusterIP
+      type: NodePort
       port: 8081
       targetPort: 8081
+      nodePort: 31086  # host-accessible on KinD via extraPortMappings
 
   prometheusMcpServer:
     enabled: true
