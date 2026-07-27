@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -209,7 +210,7 @@ func installChart(config *Config) error {
 	// If --wait was requested, use kubectl rollout status instead of Helm's
 	// built-in wait which suffers from client-go rate limiter bugs in v3.14
 	if config.Wait {
-		if err := waitForDeployments(config.Namespace, config.Timeout); err != nil {
+		if err := waitForDeployments(config.Namespace, config.ReleaseName, config.Timeout); err != nil {
 			return fmt.Errorf("deployments not ready: %w", err)
 		}
 	}
@@ -217,29 +218,56 @@ func installChart(config *Config) error {
 	return nil
 }
 
-// waitForDeployments waits for all deployments in the namespace to be ready
-// using kubectl rollout status, which doesn't suffer from Helm's rate limiter bug.
-func waitForDeployments(namespace, timeout string) error {
+// waitForDeployments waits for the deployments owned by the given Helm release to be ready.
+// It uses `helm get manifest` to discover which Deployments belong to the release, avoiding
+// false failures from other releases sharing the namespace (e.g. a leftover agent deployment).
+// If releaseName is empty or helm manifest lookup fails, it falls back to all deployments in
+// the namespace.
+func waitForDeployments(namespace, releaseName, timeout string) error {
 	if timeout == "" {
 		timeout = "15m"
 	}
 
-	log.Printf("Waiting for all deployments in namespace %s to be ready (timeout: %s)...", namespace, timeout)
+	var deployments []string
 
-	// Get list of deployments
-	listCmd := exec.Command("kubectl", "get", "deployments", "-n", namespace, "-o", "jsonpath={.items[*].metadata.name}")
-	out, err := listCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to list deployments: %w", err)
+	if releaseName != "" {
+		manifestCmd := exec.Command("helm", "get", "manifest", releaseName, "-n", namespace)
+		manifestOut, manifestErr := manifestCmd.Output()
+		if manifestErr == nil {
+			for _, doc := range strings.Split(string(manifestOut), "---") {
+				var kind, name string
+				for _, line := range strings.Split(doc, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "kind:") && !strings.HasPrefix(line, " ") {
+						kind = strings.TrimSpace(strings.TrimPrefix(trimmed, "kind:"))
+					}
+					if strings.HasPrefix(trimmed, "name:") && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+						name = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "name:")), `"'`)
+					}
+				}
+				if strings.EqualFold(kind, "Deployment") && name != "" {
+					deployments = append(deployments, name)
+				}
+			}
+			log.Printf("Scoping wait to %d deployment(s) from helm release %s: %s",
+				len(deployments), releaseName, strings.Join(deployments, ", "))
+		}
 	}
 
-	deployments := strings.Fields(string(out))
 	if len(deployments) == 0 {
-		log.Printf("No deployments found in namespace %s, skipping wait", namespace)
+		log.Printf("Falling back to listing all deployments in namespace %s", namespace)
+		listCmd := exec.Command("kubectl", "get", "deployments", "-n", namespace, "-o", "jsonpath={.items[*].metadata.name}")
+		out, err := listCmd.Output()
+		if err != nil {
+			return fmt.Errorf("failed to list deployments: %w", err)
+		}
+		deployments = strings.Fields(string(out))
+	}
+
+	if len(deployments) == 0 {
+		log.Printf("No deployments found, skipping wait")
 		return nil
 	}
-
-	log.Printf("Found %d deployments: %s", len(deployments), strings.Join(deployments, ", "))
 
 	// Wait for all deployments concurrently so slow Java services don't serialize the wait
 	type result struct {
@@ -296,11 +324,38 @@ func cleanupStuckRelease(releaseName, namespace string) error {
 		return nil
 	}
 
-	status := string(out)
+	// Parse JSON to extract only info.status — avoid false positives from
+	// strings.Contains on the full output (which includes the manifest YAML
+	// where words like "failed" appear in probe descriptions, label values, etc.)
+	var helmStatus struct {
+		Info struct {
+			Status string `json:"status"`
+		} `json:"info"`
+	}
+	releaseStatus := ""
+	if jsonErr := json.Unmarshal(out, &helmStatus); jsonErr == nil {
+		releaseStatus = helmStatus.Info.Status
+	} else {
+		// Fallback: find the status value using a narrow pattern rather than
+		// scanning the entire JSON blob.
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.Contains(line, `"status"`) {
+				for _, candidate := range []string{"pending-install", "pending-upgrade", "pending-rollback", "failed", "deployed", "superseded", "uninstalled"} {
+					if strings.Contains(line, candidate) {
+						releaseStatus = candidate
+						break
+					}
+				}
+				if releaseStatus != "" {
+					break
+				}
+			}
+		}
+	}
 	stuckStates := []string{"pending-install", "pending-upgrade", "pending-rollback", "failed"}
 	isStuck := false
 	for _, state := range stuckStates {
-		if strings.Contains(status, state) {
+		if releaseStatus == state {
 			isStuck = true
 			log.Printf("Release %s is stuck in '%s' state, cleaning up...", releaseName, state)
 			break
