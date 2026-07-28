@@ -21,13 +21,15 @@ spec:
         app: sock-shop
         name: orders
     spec:
+      imagePullSecrets:
+        - name: jfrog-registry
       containers:
       - env:
         - name: ZIPKIN
           value: zipkin.jaeger.svc.cluster.local
         - name: JAVA_OPTS
           value: {{ .Values.sockShop.orders.javaOpts | quote }}
-        image: {{ .Values.sockShop.orders.image }}
+        image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.orders.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: orders
         ports:

@@ -21,8 +21,10 @@ spec:
         app: sock-shop
         name: payment
     spec:
+      imagePullSecrets:
+        - name: jfrog-registry
       containers:
-      - image: {{ .Values.sockShop.payment.image }}
+      - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.payment.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: payment
         ports:

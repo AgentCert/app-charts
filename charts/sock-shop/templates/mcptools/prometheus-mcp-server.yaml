@@ -122,9 +122,11 @@ spec:
         app: {{ .Values.mcpTools.prometheusMcpServer.name }}
     spec:
       serviceAccountName: {{ .Values.mcpTools.prometheusMcpServer.name }}
+      imagePullSecrets:
+        - name: jfrog-registry
       containers:
         - name: {{ .Values.mcpTools.prometheusMcpServer.name }}
-          image: {{ .Values.mcpTools.prometheusMcpServer.image }}
+          image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.mcpTools.prometheusMcpServer.image) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           envFrom:
             - configMapRef:

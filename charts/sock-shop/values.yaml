@@ -3,6 +3,7 @@
 # Global settings
 global:
   imagePullPolicy: IfNotPresent
+  imageRegistry: "infyartifactory.jfrog.io/docker-local"    # JFrog Artifactory
 
 # Namespace configurations
 namespaces:
@@ -205,7 +206,7 @@ mcpTools:
     enabled: true
     name: kubernetes-mcp-server
     replicas: 1
-    image: quay.io/containers/kubernetes_mcp_server:latest
+    image: kubernetes_mcp_server:latest
     port: 8081
     args:
       - "--port"

@@ -21,8 +21,10 @@ spec:
         app: sock-shop
         name: user-db
     spec:
+      imagePullSecrets:
+        - name: jfrog-registry
       containers:
-      - image: {{ .Values.sockShop.userDb.image }}
+      - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.userDb.image) }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: user-db
         ports:

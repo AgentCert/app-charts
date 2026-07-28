@@ -17,7 +17,7 @@ spec:
         app: chaos-exporter
     spec:
       containers:
-        - image: {{ .Values.litmus.chaosExporter.image }}
+        - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.litmus.chaosExporter.image) }}
           imagePullPolicy: Always
           name: chaos-exporter
       serviceAccountName: litmus
