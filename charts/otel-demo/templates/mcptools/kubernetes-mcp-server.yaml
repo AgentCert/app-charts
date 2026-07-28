@@ -72,6 +72,41 @@ subjects:
     namespace: {{ .Values.namespaces.otelDemo }}
 
 ---
+# ClusterRole for cluster-scoped resources (namespaces, nodes) the MCP tools need.
+# Name is prefixed with the namespace to ensure uniqueness when multiple app charts
+# are deployed side-by-side (sock-shop, bookinfo, otel-demo each get their own).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.namespaces.otelDemo }}-{{ .Values.mcpTools.kubernetesMcpServer.name }}-cluster-reader
+  labels:
+    app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+
+---
+# ClusterRoleBinding to grant the MCP server service account the cluster-reader role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.namespaces.otelDemo }}-{{ .Values.mcpTools.kubernetesMcpServer.name }}-cluster-reader
+  labels:
+    app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Values.namespaces.otelDemo }}-{{ .Values.mcpTools.kubernetesMcpServer.name }}-cluster-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+    namespace: {{ .Values.namespaces.otelDemo }}
+
+---
 # Deployment for Kubernetes MCP Server
 apiVersion: apps/v1
 kind: Deployment

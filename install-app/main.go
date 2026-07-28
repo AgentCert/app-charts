@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -235,17 +236,33 @@ func waitForDeployments(namespace, releaseName, timeout string) error {
 		manifestOut, manifestErr := manifestCmd.Output()
 		if manifestErr == nil {
 			for _, doc := range strings.Split(string(manifestOut), "---") {
-				var kind, name string
+				var kind, name, docNS string
+				inMetadata := false
 				for _, line := range strings.Split(doc, "\n") {
 					trimmed := strings.TrimSpace(line)
 					if strings.HasPrefix(trimmed, "kind:") && !strings.HasPrefix(line, " ") {
 						kind = strings.TrimSpace(strings.TrimPrefix(trimmed, "kind:"))
 					}
-					if strings.HasPrefix(trimmed, "name:") && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-						name = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "name:")), `"'`)
+					if trimmed == "metadata:" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+						inMetadata = true
+					} else if inMetadata && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+						inMetadata = false
+					}
+					if inMetadata {
+						if strings.HasPrefix(trimmed, "name:") {
+							indent := len(line) - len(strings.TrimLeft(line, " \t"))
+							if indent <= 4 {
+								name = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "name:")), `"'`)
+							}
+						}
+						if strings.HasPrefix(trimmed, "namespace:") {
+							docNS = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "namespace:")), `"'`)
+						}
 					}
 				}
-				if strings.EqualFold(kind, "Deployment") && name != "" {
+				// Only wait for deployments in the target namespace; skip cross-namespace
+				// resources (e.g. monitoring components deployed to a different namespace).
+				if strings.EqualFold(kind, "Deployment") && name != "" && (docNS == "" || docNS == namespace) {
 					deployments = append(deployments, name)
 				}
 			}
@@ -421,19 +438,19 @@ func ensureNamespace(namespace, releaseName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Check if namespace exists
-	checkCmd := exec.Command("kubectl", "get", "namespace", namespace)
-	if err := checkCmd.Run(); err != nil {
-		// Create namespace
-		log.Printf("Creating namespace: %s", namespace)
-		createCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", namespace)
-		createCmd.Stdout = os.Stdout
-		createCmd.Stderr = os.Stderr
-		if err := createCmd.Run(); err != nil {
+	// Create the namespace; if it already exists that is fine.
+	log.Printf("Ensuring namespace: %s", namespace)
+	createCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", namespace)
+	createCmd.Stdout = os.Stdout
+	var createStderr bytes.Buffer
+	createCmd.Stderr = &createStderr
+	if err := createCmd.Run(); err != nil {
+		if strings.Contains(createStderr.String(), "AlreadyExists") {
+			log.Printf("Namespace %s already exists", namespace)
+		} else {
+			os.Stderr.Write(createStderr.Bytes())
 			return fmt.Errorf("failed to create namespace: %w", err)
 		}
-	} else {
-		log.Printf("Namespace %s already exists", namespace)
 	}
 
 	// Add Helm ownership labels and annotations so Helm can adopt the namespace
