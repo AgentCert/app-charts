@@ -18,7 +18,7 @@ RUN go mod download
 COPY install-app/ ./
 
 # Build the binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o install-app .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o install-app .
 
 # Final stage
 FROM alpine:3.19

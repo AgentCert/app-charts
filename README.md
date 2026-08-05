@@ -115,7 +115,7 @@ expose typed tools the agent calls during a scan:
 | Server | Image | Exposure | What it exposes |
 |---|---|---|---|
 | `kubernetes-mcp-server` | `quay.io/containers/kubernetes_mcp_server:latest` | ClusterIP `:8081` | Pod / Deployment / Service / Event / Log read tools |
-| `prometheus-mcp-server` | `agentcert/prometheus-mcp-server:latest` | NodePort `31083` | PromQL query tools against the deployed Prometheus |
+| `prometheus-mcp-server` | `ghcr.io/pab1it0/prometheus-mcp-server:latest` | NodePort `31083` | PromQL query tools against the deployed Prometheus |
 
 > Note: `values.yaml` documents that in some AgentCert deployments the MCP servers are
 > wired into the `litmus-exp` namespace by the framework instead — controlled by

@@ -166,7 +166,7 @@ mcpTools:
     enabled: true
     name: prometheus-mcp-server
     replicas: 1
-    image: agentcert/prometheus-mcp-server:latest
+    image: ghcr.io/pab1it0/prometheus-mcp-server:latest
     port: 9090
     config:
       prometheusUrl: ""  # Auto-resolved to http://prometheus.<monitoring-ns>.svc.cluster.local:9090
