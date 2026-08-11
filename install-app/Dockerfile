@@ -47,6 +47,18 @@ COPY --from=builder /app/install-app /usr/local/bin/install-app
 # Copy all chart repositories into the container
 COPY charts/ /charts/
 
+# Fetch Helm chart dependencies (e.g. otel-demo's upstream opentelemetry-demo
+# subchart) at build time. These are never vendored in git -- charts/*.tgz is
+# gitignored -- so without this step any chart with a `dependencies:` block
+# installs with "missing in charts/ directory" until someone runs
+# `helm dependency build` by hand first.
+RUN for chart in /charts/*/; do \
+      if [ -f "${chart}Chart.yaml" ] && grep -q '^dependencies:' "${chart}Chart.yaml"; then \
+        echo "Building Helm dependencies for ${chart}" && \
+        helm dependency build "${chart}" || exit 1; \
+      fi; \
+    done
+
 # Set permissions
 RUN chmod +x /usr/local/bin/install-app && \
     chown -R appuser:appuser /app /charts
