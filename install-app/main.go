@@ -453,6 +453,30 @@ func deleteHelmStateSecrets(ctx context.Context, releaseName, namespace string) 
 	return deleteCmd.Run()
 }
 
+// waitForNamespaceNotTerminating polls until the namespace is either absent or
+// Active (not Terminating). Needed because namespace deletion in Kubernetes is
+// async: the previous experiment's cleanup step runs helm uninstall / deletes
+// resources, but the namespace lingers in Terminating state for tens of seconds
+// while the API server finalizes resource removal. If the next experiment's
+// install-application runs during that window, Helm fails with "unable to
+// create new content in namespace X because it is being terminated".
+func waitForNamespaceNotTerminating(namespace string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		out, err := exec.Command("kubectl", "get", "ns", namespace,
+			"-o", "jsonpath={.status.phase}").Output()
+		if err != nil {
+			return nil // namespace gone — safe to proceed
+		}
+		if strings.TrimSpace(string(out)) != "Terminating" {
+			return nil
+		}
+		log.Printf("Namespace %s is Terminating, waiting...", namespace)
+		time.Sleep(5 * time.Second)
+	}
+	return fmt.Errorf("namespace %s still Terminating after %v", namespace, timeout)
+}
+
 // ensureNamespace creates the namespace if it doesn't already exist and ensures
 // it has the required Helm ownership labels and annotations so Helm can adopt it.
 func ensureNamespace(namespace, releaseName string) error {
@@ -468,6 +492,11 @@ func ensureNamespace(namespace, releaseName string) error {
 	if err := createCmd.Run(); err != nil {
 		if strings.Contains(createStderr.String(), "AlreadyExists") {
 			log.Printf("Namespace %s already exists", namespace)
+			// Namespace may still be Terminating from a previous experiment's cleanup —
+			// wait for it to leave that state before Helm tries to create resources in it.
+			if waitErr := waitForNamespaceNotTerminating(namespace, 3*time.Minute); waitErr != nil {
+				return waitErr
+			}
 		} else {
 			os.Stderr.Write(createStderr.Bytes())
 			return fmt.Errorf("failed to create namespace: %w", err)
