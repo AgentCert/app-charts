@@ -31,23 +31,33 @@ func (s *setFlags) Set(val string) error {
 }
 
 type Config struct {
-	FolderName    string
-	ReleaseName   string
-	Namespace     string
-	ChartsPath    string
-	ValuesFile    string
-	SetValues     setFlags // supports multiple --set flags
-	DryRun        bool
-	Wait          bool
-	Timeout       string
-	CreateNS      bool
-	Upgrade       bool
-	KubeConfig    string
-	KubeContext   string
+	FolderName      string
+	ReleaseName     string
+	Namespace       string
+	ChartsPath      string
+	ValuesFile      string
+	SetValues       setFlags // supports multiple --set flags
+	DryRun          bool
+	Wait            bool
+	Timeout         string
+	CreateNS        bool
+	Upgrade         bool
+	Delete          bool
+	DeleteNamespace bool
+	KubeConfig      string
+	KubeContext     string
 }
 
 func main() {
 	config := parseFlags()
+
+	if config.Delete {
+		if err := uninstallApp(config); err != nil {
+			log.Fatalf("Uninstall failed: %v", err)
+		}
+		log.Printf("Successfully uninstalled app chart (release: %s, namespace: %s)", config.ReleaseName, config.Namespace)
+		return
+	}
 
 	if err := validateConfig(config); err != nil {
 		log.Fatalf("Configuration error: %v", err)
@@ -74,6 +84,8 @@ func parseFlags() *Config {
 	flag.StringVar(&config.Timeout, "timeout", "20m", "Timeout for installation")
 	flag.BoolVar(&config.CreateNS, "create-namespace", true, "Create namespace if it doesn't exist")
 	flag.BoolVar(&config.Upgrade, "upgrade", true, "Use helm upgrade --install for idempotent installs (set to false to use helm install)")
+	flag.BoolVar(&config.Delete, "delete", false, "Uninstall (helm uninstall) the chart instead of installing it")
+	flag.BoolVar(&config.DeleteNamespace, "delete-namespace", false, "Also delete the target namespace after uninstalling (only used with -delete)")
 	flag.StringVar(&config.KubeConfig, "kubeconfig", "", "Path to kubeconfig file")
 	flag.StringVar(&config.KubeContext, "context", "", "Kubernetes context to use")
 
@@ -90,7 +102,11 @@ func parseFlags() *Config {
 		fmt.Fprintf(os.Stderr, "  # Upgrade existing release\n")
 		fmt.Fprintf(os.Stderr, "  install-app -folder sock-shop -upgrade -namespace sock-shop\n\n")
 		fmt.Fprintf(os.Stderr, "  # Dry-run installation\n")
-		fmt.Fprintf(os.Stderr, "  install-app -folder sock-shop -dry-run\n")
+		fmt.Fprintf(os.Stderr, "  install-app -folder sock-shop -dry-run\n\n")
+		fmt.Fprintf(os.Stderr, "  # Uninstall a previously installed release\n")
+		fmt.Fprintf(os.Stderr, "  install-app -delete -folder sock-shop -namespace sock-shop\n\n")
+		fmt.Fprintf(os.Stderr, "  # Uninstall and also remove the namespace\n")
+		fmt.Fprintf(os.Stderr, "  install-app -delete -delete-namespace -folder sock-shop -namespace sock-shop\n")
 	}
 
 	flag.Parse()
@@ -235,6 +251,56 @@ func installChart(config *Config) error {
 		if err := waitForDeployments(config.Namespace, config.ReleaseName, config.Timeout); err != nil {
 			return fmt.Errorf("deployments not ready: %w", err)
 		}
+	}
+
+	return nil
+}
+
+// uninstallApp uninstalls the Helm release identified by config, and — when
+// config.DeleteNamespace is set — also deletes the target namespace once the
+// release is gone. Mirrors install-agent's uninstallChart(), extended with
+// namespace deletion since the uninstall-application fault (unlike
+// uninstall-agent) requests namespaces:delete in its RBAC and is expected to
+// tear the target application's namespace down entirely, not just its release.
+func uninstallApp(config *Config) error {
+	releaseName := config.ReleaseName
+	if releaseName == "" {
+		releaseName = config.FolderName
+	}
+
+	args := []string{"uninstall", releaseName, "--namespace", config.Namespace, "--ignore-not-found"}
+	if config.Timeout != "" {
+		args = append(args, "--timeout", config.Timeout)
+	}
+	if config.KubeConfig != "" {
+		args = append(args, "--kubeconfig", config.KubeConfig)
+	}
+	if config.KubeContext != "" {
+		args = append(args, "--kube-context", config.KubeContext)
+	}
+
+	log.Printf("Executing: helm %s", strings.Join(args, " "))
+	cmd := exec.Command("helm", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("helm uninstall failed: %w", err)
+	}
+
+	if !config.DeleteNamespace {
+		return nil
+	}
+
+	log.Printf("Deleting namespace: %s", config.Namespace)
+	deleteArgs := []string{"delete", "namespace", config.Namespace, "--ignore-not-found"}
+	if config.Timeout != "" {
+		deleteArgs = append(deleteArgs, "--timeout", config.Timeout)
+	}
+	deleteCmd := exec.Command("kubectl", deleteArgs...)
+	deleteCmd.Stdout = os.Stdout
+	deleteCmd.Stderr = os.Stderr
+	if err := deleteCmd.Run(); err != nil {
+		return fmt.Errorf("namespace deletion failed: %w", err)
 	}
 
 	return nil
