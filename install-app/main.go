@@ -145,8 +145,35 @@ func validateConfig(config *Config) error {
 	return nil
 }
 
+func applyNamespaceSetDefaults(config *Config) {
+	keyByFolder := map[string]string{
+		"bookinfo":  "namespaces.bookInfo",
+		"otel-demo": "namespaces.otelDemo",
+		"sock-shop": "namespaces.sockShop",
+	}
+
+	namespaceKey, ok := keyByFolder[config.FolderName]
+	if !ok || config.Namespace == "" || hasHelmSetKey(config.SetValues, namespaceKey) {
+		return
+	}
+
+	config.SetValues = append(config.SetValues, fmt.Sprintf("%s=%s", namespaceKey, config.Namespace))
+}
+
+func hasHelmSetKey(values []string, key string) bool {
+	prefix := key + "="
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == key || strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func installChart(config *Config) error {
 	chartPath := filepath.Join(config.ChartsPath, config.FolderName)
+	applyNamespaceSetDefaults(config)
 
 	// Calculate total steps upfront for progress display.
 	totalSteps := 2 // cleanupStuckRelease + helm run always execute
