@@ -211,6 +211,8 @@ mcpTools:
       - "--port"
       - "8081"
       - "--stateless"
+      - "--list-output"
+      - "yaml"
     resources:
       requests:
         memory: "128Mi"

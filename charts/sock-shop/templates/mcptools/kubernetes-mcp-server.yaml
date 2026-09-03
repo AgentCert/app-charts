@@ -20,9 +20,9 @@ metadata:
   labels:
     app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
 rules:
-  # Standard Kubernetes resources (read-only, namespace-scoped)
+  # Standard Kubernetes resources — read-only baseline (namespace-scoped)
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "services", "configmaps", "secrets", "events", "replicationcontrollers", "persistentvolumeclaims"]
+    resources: ["pods", "pods/log", "services", "configmaps", "secrets", "events", "replicationcontrollers", "persistentvolumeclaims", "resourcequotas"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["apps"]
     resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
@@ -33,6 +33,30 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies", "ingresses"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  # Remediation writes (namespace-scoped) — this MCP server backs an SRE agent
+  # whose whole job is to *fix* injected faults: scale a zeroed Deployment back
+  # up, roll back a poisoned pod template, delete an ingress-blocking
+  # NetworkPolicy or a stuck pod, drop an absurd ResourceQuota, correct an HPA,
+  # patch a feature-flag ConfigMap. Without these it can only ever diagnose.
+  # Blast radius is this one application namespace.
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+    verbs: ["update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale", "statefulsets/scale", "replicasets/scale"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "persistentvolumeclaims", "resourcequotas"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["update", "patch", "delete"]
   # Read-only access to the aggregated metrics API (served by metrics-server).
   # Only `pods` is granted — `nodes.metrics.k8s.io` is cluster-scoped and cannot
   # be granted by a namespace-scoped Role; the agent's prompt steers away from
@@ -85,6 +109,14 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces", "nodes"]
     verbs: ["get", "list", "watch"]
+  # Cluster-scoped remediation: uncordon a node (spec.unschedulable=false),
+  # remove a chaos PriorityClass. See the namespace Role for the rationale.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["update", "patch"]
+  - apiGroups: ["scheduling.k8s.io"]
+    resources: ["priorityclasses"]
+    verbs: ["get", "list", "watch", "delete"]
   - apiGroups: ["metrics.k8s.io"]
     resources: ["nodes"]
     verbs: ["get", "list"]
