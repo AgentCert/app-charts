@@ -175,6 +175,11 @@ func installChart(config *Config) error {
 	chartPath := filepath.Join(config.ChartsPath, config.FolderName)
 	applyNamespaceSetDefaults(config)
 
+	// Must run before anything touches a namespace: a broken metrics APIService
+	// makes every namespace in the cluster impossible to finalize, so waiting for
+	// a Terminating namespace below would otherwise block forever.
+	healStaleMetricsAPIService()
+
 	// Calculate total steps upfront for progress display.
 	totalSteps := 2 // cleanupStuckRelease + helm run always execute
 	if config.CreateNS {
@@ -572,6 +577,50 @@ func waitForNamespaceNotTerminating(namespace string, timeout time.Duration) err
 
 // ensureNamespace creates the namespace if it doesn't already exist and ensures
 // it has the required Helm ownership labels and annotations so Helm can adopt it.
+// healStaleMetricsAPIService removes the aggregated metrics APIService when it
+// exists but reports Available=False, so the cluster can recover on its own.
+//
+// Why this is needed. v1beta1.metrics.k8s.io is cluster-scoped and owned by this
+// chart, but the metrics-server backing it runs in the monitoring namespace. A
+// partial teardown — typically the app namespace being deleted out from under
+// `helm uninstall` — can strip metrics-server's ClusterRoleBindings while leaving
+// the Deployment running. It then 403s on nodes/subjectaccessreviews, never turns
+// Ready, and its Service keeps no endpoints.
+//
+// The damage is cluster-wide and badly disguised: with an aggregated APIService
+// unavailable, the apiserver cannot complete discovery, and the namespace
+// controller refuses to finalize ANY terminating namespace. Every later
+// experiment then dies in install with a "namespace is Terminating" error that
+// points nowhere near metrics-server, and no amount of waiting clears it.
+//
+// Deleting a broken one is safe: Helm recreates it, with fresh RBAC, as part of
+// installing this chart. Best-effort throughout — never block an install on it.
+func healStaleMetricsAPIService() {
+	const apiService = "v1beta1.metrics.k8s.io"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "kubectl", "get", "apiservice", apiService,
+		"-o", `jsonpath={.status.conditions[?(@.type=="Available")].status}`).Output()
+	if err != nil {
+		// Not present (the normal first-install case) or unreadable — nothing to do.
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(string(out)), "False") {
+		return
+	}
+
+	log.Printf("APIService %s is present but Available=False; deleting it so namespace "+
+		"finalization is not blocked cluster-wide (Helm will recreate it)", apiService)
+	del := exec.CommandContext(ctx, "kubectl", "delete", "apiservice", apiService, "--ignore-not-found")
+	del.Stdout = os.Stdout
+	del.Stderr = os.Stderr
+	if err := del.Run(); err != nil {
+		log.Printf("Warning: could not delete stale APIService %s: %v", apiService, err)
+	}
+}
+
 func ensureNamespace(namespace, releaseName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
