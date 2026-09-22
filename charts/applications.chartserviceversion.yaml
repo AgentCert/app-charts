@@ -25,12 +25,28 @@ spec:
       email: agentcert@microsoft.com
   provider:
     name: AgentCert
+  # Onboarding a new application means adding an entry here and nothing else:
+  # the Chaos Studio builder, the fault/agent compatibility filters, and the
+  # server-side experiment validator all read this catalogue at runtime. Faults
+  # and agents are permissive by default, so a new application is immediately
+  # usable with every generic fault and every unrestricted agent.
+  #
+  #   name       — chart folder name; also the application's key everywhere else
+  #                (a fault's targetRequirements.requiredApp, an agent's
+  #                compatibleApplications entry).
+  #   namespace  — namespace the chart installs into by default.
+  #   labelKey   — label key whose value is the microservice name, used to build
+  #                a ChaosEngine `applabel` before the app is deployed.
+  #                Optional; defaults to app.kubernetes.io/name.
+  #   aliases    — additional `-folder=` values that should resolve to this app,
+  #                for charts that have been renamed. Optional.
   applications:
     - name: sock-shop
       displayName: Sock Shop
       description: "Weaveworks Sock Shop — a cloud-native microservices demo with 13 services including carts, catalogue, orders, payment, shipping, user, queue-master, front-end, and supporting databases."
       version: "1.0.0"
       namespace: sock-shop
+      labelKey: name
       microservices:
         - name: carts
           description: "Shopping cart service"
@@ -63,6 +79,10 @@ spec:
       description: "Istio's Bookinfo sample — a book-review microservices demo with details, ratings, and three reviews versions (v1/v2/v3) fronted by productpage. Vendored from istio/istio (the tag ITBench pins for its SRE scenarios), deployed without the Istio service mesh layer."
       version: "1.30.2"
       namespace: book-info
+      labelKey: app
+      # The chart folder is `bookinfo`; `book-info` is the namespace and the name
+      # earlier manifests used for -folder=.
+      aliases: [book-info]
       microservices:
         - name: details
           description: "Book details service"
@@ -81,6 +101,7 @@ spec:
       description: "The OpenTelemetry Demo — a ~20-service polyglot e-commerce microservices demo, wrapping the official upstream Helm chart at the version ITBench pins for its SRE scenarios."
       version: "0.40.9"
       namespace: otel-demo
+      labelKey: opentelemetry.io/name
       microservices:
         - name: frontend
           description: "Web frontend"

@@ -323,6 +323,13 @@ func uninstallApp(config *Config) error {
 		return nil
 	}
 
+	// A namespace cannot finalize while any aggregated APIService is unavailable,
+	// and this uninstall may well be what broke one. Healing here as well as at
+	// install time is what keeps a teardown from leaving the cluster wedged until
+	// the *next* install happens to run -- which, between experiments, can be
+	// hours, and presents as an unrelated "namespace is Terminating" failure.
+	healStaleMetricsAPIService()
+
 	log.Printf("Deleting namespace: %s", config.Namespace)
 	deleteArgs := []string{"delete", "namespace", config.Namespace, "--ignore-not-found"}
 	if config.Timeout != "" {
@@ -575,8 +582,6 @@ func waitForNamespaceNotTerminating(namespace string, timeout time.Duration) err
 	return fmt.Errorf("namespace %s still Terminating after %v", namespace, timeout)
 }
 
-// ensureNamespace creates the namespace if it doesn't already exist and ensures
-// it has the required Helm ownership labels and annotations so Helm can adopt it.
 // healStaleMetricsAPIService removes the aggregated metrics APIService when it
 // exists but reports Available=False, so the cluster can recover on its own.
 //
@@ -611,6 +616,14 @@ func healStaleMetricsAPIService() {
 		return
 	}
 
+	// Read the backing Service's namespace before the APIService is deleted —
+	// that is the only in-cluster record of where metrics-server actually runs.
+	msNamespace := ""
+	if nsOut, nsErr := exec.CommandContext(ctx, "kubectl", "get", "apiservice", apiService,
+		"-o", "jsonpath={.spec.service.namespace}").Output(); nsErr == nil {
+		msNamespace = strings.TrimSpace(string(nsOut))
+	}
+
 	log.Printf("APIService %s is present but Available=False; deleting it so namespace "+
 		"finalization is not blocked cluster-wide (Helm will recreate it)", apiService)
 	del := exec.CommandContext(ctx, "kubectl", "delete", "apiservice", apiService, "--ignore-not-found")
@@ -619,49 +632,92 @@ func healStaleMetricsAPIService() {
 	if err := del.Run(); err != nil {
 		log.Printf("Warning: could not delete stale APIService %s: %v", apiService, err)
 	}
+
+	if msNamespace == "" {
+		return
+	}
+
+	// Deleting the APIService unblocks namespace finalization, but metrics-server
+	// itself stays broken: its ClusterRole/ClusterRoleBinding were torn down with
+	// the previous release, so the running pod keeps 403ing on nodes/metrics and
+	// never becomes Ready. Helm recreates the RBAC as part of this install, and
+	// restarting the Deployment makes the pod pick it up now instead of after an
+	// indefinite client-go backoff — otherwise the APIService comes back
+	// Available=False and the whole deadlock returns on the next teardown.
+	restart := exec.CommandContext(ctx, "kubectl", "rollout", "restart",
+		"deployment/metrics-server", "-n", msNamespace)
+	restart.Stdout = os.Stdout
+	restart.Stderr = os.Stderr
+	if err := restart.Run(); err != nil {
+		log.Printf("Warning: could not restart metrics-server in %s: %v", msNamespace, err)
+	}
 }
 
 func ensureNamespace(namespace, releaseName string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Create the namespace; if it already exists that is fine.
 	log.Printf("Ensuring namespace: %s", namespace)
-	createCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", namespace)
-	createCmd.Stdout = os.Stdout
-	var createStderr bytes.Buffer
-	createCmd.Stderr = &createStderr
-	if err := createCmd.Run(); err != nil {
-		if strings.Contains(createStderr.String(), "AlreadyExists") {
-			log.Printf("Namespace %s already exists", namespace)
-			// Namespace may still be Terminating from a previous experiment's cleanup —
-			// wait for it to leave that state before Helm tries to create resources in it.
-			if waitErr := waitForNamespaceNotTerminating(namespace, 3*time.Minute); waitErr != nil {
-				return waitErr
-			}
-		} else {
-			os.Stderr.Write(createStderr.Bytes())
-			return fmt.Errorf("failed to create namespace: %w", err)
+
+	// Wait out a namespace still terminating from a previous experiment's
+	// teardown before trying to create it. This has to happen *before* the
+	// create, not after an AlreadyExists error: once the namespace finishes
+	// terminating it is gone, so the create has to be (re)attempted afterwards.
+	// Previously the wait ran on the AlreadyExists branch and then fell straight
+	// through to labelling a namespace that no longer existed, leaving Helm --
+	// which is deliberately not given --create-namespace -- to fail with
+	// "namespaces not found".
+	if err := waitForNamespaceNotTerminating(namespace, 3*time.Minute); err != nil {
+		return err
+	}
+
+	// Every kubectl call below gets its own deadline. A single context covering
+	// the whole function expired during the wait above, so labelling and
+	// annotating then failed instantly with "context deadline exceeded".
+	kubectl := func(args ...string) (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "kubectl", args...)
+		var stderr bytes.Buffer
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil && stderr.Len() > 0 && !strings.Contains(stderr.String(), "AlreadyExists") {
+			os.Stderr.Write(stderr.Bytes())
 		}
+		return stderr.String(), err
+	}
+
+	// Create the namespace; if it already exists that is fine. Immediately after
+	// a namespace finishes terminating the API server can still reject the
+	// create, so retry briefly.
+	var createErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		var stderr string
+		stderr, createErr = kubectl("create", "namespace", namespace)
+		if createErr == nil {
+			break
+		}
+		if strings.Contains(stderr, "AlreadyExists") {
+			log.Printf("Namespace %s already exists", namespace)
+			createErr = nil
+			break
+		}
+		log.Printf("Namespace %s not creatable yet (%s); retrying...", namespace, strings.TrimSpace(stderr))
+		time.Sleep(5 * time.Second)
+	}
+	if createErr != nil {
+		return fmt.Errorf("failed to create namespace: %w", createErr)
 	}
 
 	// Add Helm ownership labels and annotations so Helm can adopt the namespace
 	log.Printf("Labeling namespace %s for Helm ownership", namespace)
-	labelCmd := exec.CommandContext(ctx, "kubectl", "label", "namespace", namespace,
-		"app.kubernetes.io/managed-by=Helm", "--overwrite")
-	labelCmd.Stdout = os.Stdout
-	labelCmd.Stderr = os.Stderr
-	if err := labelCmd.Run(); err != nil {
+	if _, err := kubectl("label", "namespace", namespace,
+		"app.kubernetes.io/managed-by=Helm", "--overwrite"); err != nil {
 		return fmt.Errorf("failed to label namespace: %w", err)
 	}
 
-	annotateCmd := exec.CommandContext(ctx, "kubectl", "annotate", "namespace", namespace,
+	if _, err := kubectl("annotate", "namespace", namespace,
 		fmt.Sprintf("meta.helm.sh/release-name=%s", releaseName),
 		fmt.Sprintf("meta.helm.sh/release-namespace=%s", namespace),
-		"--overwrite")
-	annotateCmd.Stdout = os.Stdout
-	annotateCmd.Stderr = os.Stderr
-	if err := annotateCmd.Run(); err != nil {
+		"--overwrite"); err != nil {
 		return fmt.Errorf("failed to annotate namespace: %w", err)
 	}
 
