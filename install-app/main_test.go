@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestApplyNamespaceSetDefaults(t *testing.T) {
 	tests := []struct {
@@ -58,5 +61,26 @@ func TestApplyNamespaceSetDefaults(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFormatHelmArgsRedactsSensitiveSetValues(t *testing.T) {
+	args := []string{
+		"upgrade", "agent",
+		"--set", "agent.secret.OPENAI_API_KEY=top-secret",
+		"--set-string=credentials.access-token=token-value",
+		"--set", "agent.config.MODEL_ALIAS=qwen",
+	}
+	got := formatHelmArgs(args)
+	if strings.Contains(got, "top-secret") || strings.Contains(got, "token-value") {
+		t.Fatalf("formatHelmArgs leaked a secret: %s", got)
+	}
+	if !strings.Contains(got, "OPENAI_API_KEY=<redacted>") ||
+		!strings.Contains(got, "access-token=<redacted>") ||
+		!strings.Contains(got, "MODEL_ALIAS=qwen") {
+		t.Fatalf("formatHelmArgs redaction is incorrect: %s", got)
+	}
+	if args[3] != "agent.secret.OPENAI_API_KEY=top-secret" {
+		t.Fatal("formatHelmArgs mutated command arguments")
 	}
 }

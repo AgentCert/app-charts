@@ -30,6 +30,44 @@ func (s *setFlags) Set(val string) error {
 	return nil
 }
 
+func isSensitiveHelmKey(key string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+	for _, marker := range []string{"password", "secret", "token", "api_key", "apikey", "credential", "private_key"} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func redactHelmSetValue(value string) string {
+	key, _, found := strings.Cut(value, "=")
+	if found && isSensitiveHelmKey(key) {
+		return key + "=<redacted>"
+	}
+	return value
+}
+
+func formatHelmArgs(args []string) string {
+	safe := append([]string(nil), args...)
+	for i := 0; i < len(safe); i++ {
+		switch safe[i] {
+		case "--set", "--set-string", "--set-json":
+			if i+1 < len(safe) {
+				safe[i+1] = redactHelmSetValue(safe[i+1])
+				i++
+			}
+		default:
+			for _, prefix := range []string{"--set=", "--set-string=", "--set-json="} {
+				if strings.HasPrefix(safe[i], prefix) {
+					safe[i] = prefix + redactHelmSetValue(strings.TrimPrefix(safe[i], prefix))
+				}
+			}
+		}
+	}
+	return strings.Join(safe, " ")
+}
+
 type Config struct {
 	FolderName      string
 	ReleaseName     string
@@ -266,7 +304,7 @@ func installChart(config *Config) error {
 		args = append(args, "--kube-context", config.KubeContext)
 	}
 
-	nextStep("Running: helm %s", strings.Join(args, " "))
+	nextStep("Running: helm %s", formatHelmArgs(args))
 
 	cmd := exec.Command("helm", args...)
 	cmd.Stdout = os.Stdout
@@ -311,7 +349,7 @@ func uninstallApp(config *Config) error {
 		args = append(args, "--kube-context", config.KubeContext)
 	}
 
-	log.Printf("Executing: helm %s", strings.Join(args, " "))
+	log.Printf("Executing: helm %s", formatHelmArgs(args))
 	cmd := exec.Command("helm", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -345,11 +383,9 @@ func uninstallApp(config *Config) error {
 	return nil
 }
 
-// waitForDeployments waits for the deployments owned by the given Helm release to be ready.
-// It uses `helm get manifest` to discover which Deployments belong to the release, avoiding
-// false failures from other releases sharing the namespace (e.g. a leftover agent deployment).
-// If releaseName is empty or helm manifest lookup fails, it falls back to all deployments in
-// the namespace.
+// waitForDeployments waits only for Deployments owned by the given Helm release.
+// Manifest lookup and an empty deployment set fail explicitly; readiness must never
+// fall back to unrelated workloads sharing the namespace.
 func waitForDeployments(namespace, releaseName, timeout string) error {
 	if timeout == "" {
 		timeout = "15m"
@@ -394,22 +430,14 @@ func waitForDeployments(namespace, releaseName, timeout string) error {
 			}
 			log.Printf("Scoping wait to %d deployment(s) from helm release %s: %s",
 				len(deployments), releaseName, strings.Join(deployments, ", "))
+		} else {
+			return fmt.Errorf("read manifest for release %s: %w: %s",
+				releaseName, manifestErr, strings.TrimSpace(string(manifestOut)))
 		}
 	}
 
 	if len(deployments) == 0 {
-		log.Printf("Falling back to listing all deployments in namespace %s", namespace)
-		listCmd := exec.Command("kubectl", "get", "deployments", "-n", namespace, "-o", "jsonpath={.items[*].metadata.name}")
-		out, err := listCmd.Output()
-		if err != nil {
-			return fmt.Errorf("failed to list deployments: %w", err)
-		}
-		deployments = strings.Fields(string(out))
-	}
-
-	if len(deployments) == 0 {
-		log.Printf("No deployments found, skipping wait")
-		return nil
+		return fmt.Errorf("release %s contains no Deployment to verify", releaseName)
 	}
 
 	// Wait for all deployments concurrently so slow Java services don't serialize the wait
@@ -559,98 +587,25 @@ func deleteHelmStateSecrets(ctx context.Context, releaseName, namespace string) 
 }
 
 // waitForNamespaceNotTerminating polls until the namespace is either absent or
-// Active (not Terminating). Needed because namespace deletion in Kubernetes is
-// async: the previous experiment's cleanup step runs helm uninstall / deletes
-// resources, but the namespace lingers in Terminating state for tens of seconds
-// while the API server finalizes resource removal. If the next experiment's
-// install-application runs during that window, Helm fails with "unable to
-// create new content in namespace X because it is being terminated".
+// Active (not Terminating). Namespace deletion is asynchronous, so the next
+// experiment must wait before trying to recreate the same namespace.
 func waitForNamespaceNotTerminating(namespace string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		out, err := exec.Command("kubectl", "get", "ns", namespace,
-			"-o", "jsonpath={.status.phase}").Output()
+		out, err := exec.Command(
+			"kubectl", "get", "ns", namespace,
+			"-o", "jsonpath={.status.phase}",
+		).Output()
 		if err != nil {
-			return nil // namespace gone — safe to proceed
+			return nil // namespace is absent
 		}
-		if strings.TrimSpace(string(out)) != "Terminating" {
+		if !strings.EqualFold(strings.TrimSpace(string(out)), "Terminating") {
 			return nil
 		}
 		log.Printf("Namespace %s is Terminating, waiting...", namespace)
 		time.Sleep(5 * time.Second)
 	}
 	return fmt.Errorf("namespace %s still Terminating after %v", namespace, timeout)
-}
-
-// healStaleMetricsAPIService removes the aggregated metrics APIService when it
-// exists but reports Available=False, so the cluster can recover on its own.
-//
-// Why this is needed. v1beta1.metrics.k8s.io is cluster-scoped and owned by this
-// chart, but the metrics-server backing it runs in the monitoring namespace. A
-// partial teardown — typically the app namespace being deleted out from under
-// `helm uninstall` — can strip metrics-server's ClusterRoleBindings while leaving
-// the Deployment running. It then 403s on nodes/subjectaccessreviews, never turns
-// Ready, and its Service keeps no endpoints.
-//
-// The damage is cluster-wide and badly disguised: with an aggregated APIService
-// unavailable, the apiserver cannot complete discovery, and the namespace
-// controller refuses to finalize ANY terminating namespace. Every later
-// experiment then dies in install with a "namespace is Terminating" error that
-// points nowhere near metrics-server, and no amount of waiting clears it.
-//
-// Deleting a broken one is safe: Helm recreates it, with fresh RBAC, as part of
-// installing this chart. Best-effort throughout — never block an install on it.
-func healStaleMetricsAPIService() {
-	const apiService = "v1beta1.metrics.k8s.io"
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	out, err := exec.CommandContext(ctx, "kubectl", "get", "apiservice", apiService,
-		"-o", `jsonpath={.status.conditions[?(@.type=="Available")].status}`).Output()
-	if err != nil {
-		// Not present (the normal first-install case) or unreadable — nothing to do.
-		return
-	}
-	if !strings.EqualFold(strings.TrimSpace(string(out)), "False") {
-		return
-	}
-
-	// Read the backing Service's namespace before the APIService is deleted —
-	// that is the only in-cluster record of where metrics-server actually runs.
-	msNamespace := ""
-	if nsOut, nsErr := exec.CommandContext(ctx, "kubectl", "get", "apiservice", apiService,
-		"-o", "jsonpath={.spec.service.namespace}").Output(); nsErr == nil {
-		msNamespace = strings.TrimSpace(string(nsOut))
-	}
-
-	log.Printf("APIService %s is present but Available=False; deleting it so namespace "+
-		"finalization is not blocked cluster-wide (Helm will recreate it)", apiService)
-	del := exec.CommandContext(ctx, "kubectl", "delete", "apiservice", apiService, "--ignore-not-found")
-	del.Stdout = os.Stdout
-	del.Stderr = os.Stderr
-	if err := del.Run(); err != nil {
-		log.Printf("Warning: could not delete stale APIService %s: %v", apiService, err)
-	}
-
-	if msNamespace == "" {
-		return
-	}
-
-	// Deleting the APIService unblocks namespace finalization, but metrics-server
-	// itself stays broken: its ClusterRole/ClusterRoleBinding were torn down with
-	// the previous release, so the running pod keeps 403ing on nodes/metrics and
-	// never becomes Ready. Helm recreates the RBAC as part of this install, and
-	// restarting the Deployment makes the pod pick it up now instead of after an
-	// indefinite client-go backoff — otherwise the APIService comes back
-	// Available=False and the whole deadlock returns on the next teardown.
-	restart := exec.CommandContext(ctx, "kubectl", "rollout", "restart",
-		"deployment/metrics-server", "-n", msNamespace)
-	restart.Stdout = os.Stdout
-	restart.Stderr = os.Stderr
-	if err := restart.Run(); err != nil {
-		log.Printf("Warning: could not restart metrics-server in %s: %v", msNamespace, err)
-	}
 }
 
 func ensureNamespace(namespace, releaseName string) error {
@@ -739,7 +694,7 @@ func adoptExistingResources(config *Config) error {
 		args = append(args, "--set", setValue)
 	}
 
-	log.Printf("Discovering chart resources via: helm %s", strings.Join(args, " "))
+	log.Printf("Discovering chart resources via: helm %s", formatHelmArgs(args))
 	cmd := exec.Command("helm", args...)
 	out, err := cmd.Output()
 	if err != nil {
