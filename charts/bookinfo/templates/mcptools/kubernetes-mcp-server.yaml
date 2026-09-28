@@ -139,6 +139,23 @@ subjects:
     namespace: {{ .Values.namespaces.bookInfo }}
 
 ---
+# ConfigMap holding the server's TOML config. The upstream image only accepts
+# runtime settings (port, list_output, stateless, ...) via --config/TOML now;
+# CLI flags like --port/--stateless/--list-output were removed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.mcpTools.kubernetesMcpServer.name }}-config
+  namespace: {{ .Values.namespaces.bookInfo }}
+  labels:
+    app: {{ .Values.mcpTools.kubernetesMcpServer.name }}
+data:
+  config.toml: |
+    port = "{{ .Values.mcpTools.kubernetesMcpServer.port }}"
+    list_output = {{ .Values.mcpTools.kubernetesMcpServer.config.listOutput | quote }}
+    stateless = {{ .Values.mcpTools.kubernetesMcpServer.config.stateless }}
+
+---
 # Deployment for Kubernetes MCP Server
 apiVersion: apps/v1
 kind: Deployment
@@ -164,13 +181,16 @@ spec:
           image: {{ .Values.mcpTools.kubernetesMcpServer.image }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           args:
-            {{- range .Values.mcpTools.kubernetesMcpServer.args }}
-            - {{ . | quote }}
-            {{- end }}
+            - "--config"
+            - "/etc/kubernetes-mcp-server/config.toml"
           ports:
             - containerPort: {{ .Values.mcpTools.kubernetesMcpServer.port }}
               name: http
               protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kubernetes-mcp-server
+              readOnly: true
           resources:
             requests:
               memory: {{ .Values.mcpTools.kubernetesMcpServer.resources.requests.memory | quote }}
@@ -195,6 +215,10 @@ spec:
           securityContext:
             runAsUser: {{ .Values.mcpTools.kubernetesMcpServer.securityContext.runAsUser }}
             allowPrivilegeEscalation: {{ .Values.mcpTools.kubernetesMcpServer.securityContext.allowPrivilegeEscalation }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.mcpTools.kubernetesMcpServer.name }}-config
 
 ---
 # Service for Kubernetes MCP Server

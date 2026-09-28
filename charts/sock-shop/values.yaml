@@ -204,14 +204,15 @@ mcpTools:
     enabled: true
     name: kubernetes-mcp-server
     replicas: 1
-    image: quay.io/containers/kubernetes_mcp_server:latest
+    # Pinned to a released version, not :latest: quay.io's :latest tracks unreleased
+    # main-branch builds and has twice shipped breaking CLI changes ahead of any
+    # release. Bump this tag deliberately after checking upstream's release notes
+    # (docs/configuration-changes.md in the kubernetes-mcp-server repo).
+    image: quay.io/containers/kubernetes_mcp_server:v0.0.67
     port: 8081
-    args:
-      - "--port"
-      - "8081"
-      - "--stateless"
-      - "--list-output"
-      - "yaml"
+    config:
+      listOutput: "yaml"
+      stateless: true
     resources:
       requests:
         memory: "128Mi"
