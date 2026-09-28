@@ -84,3 +84,32 @@ func TestFormatHelmArgsRedactsSensitiveSetValues(t *testing.T) {
 		t.Fatal("formatHelmArgs mutated command arguments")
 	}
 }
+
+func TestParseUnavailableAPIServices(t *testing.T) {
+	out := "v1.apps\tTrue\nv1beta1.metrics.k8s.io\tFalse\nv1.custom.example.io\t\n\n"
+	got := parseUnavailableAPIServices(out)
+	if len(got) != 1 || got[0] != "v1beta1.metrics.k8s.io" {
+		t.Fatalf("parseUnavailableAPIServices() = %v, want [v1beta1.metrics.k8s.io]", got)
+	}
+}
+
+func TestReleaseWorkloads(t *testing.T) {
+	list := []byte(`{"items":[
+	  {"kind":"Deployment","metadata":{"name":"front-end","annotations":{"meta.helm.sh/release-name":"sock-shop"}}},
+	  {"kind":"StatefulSet","metadata":{"name":"carts-db","annotations":{"meta.helm.sh/release-name":"sock-shop"}}},
+	  {"kind":"Deployment","metadata":{"name":"flash-agent","annotations":{"meta.helm.sh/release-name":"flash-agent"}}},
+	  {"kind":"DaemonSet","metadata":{"name":"node-exporter"}}
+	]}`)
+	got, err := releaseWorkloads(list, "sock-shop")
+	if err != nil {
+		t.Fatalf("releaseWorkloads() error = %v", err)
+	}
+	want := []string{"deployment/front-end", "statefulset/carts-db"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("releaseWorkloads() = %v, want %v", got, want)
+	}
+
+	if _, err := releaseWorkloads([]byte("not json"), "sock-shop"); err == nil {
+		t.Fatal("releaseWorkloads() accepted malformed JSON")
+	}
+}

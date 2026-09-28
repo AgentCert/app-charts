@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - image: {{ .Values.litmus.chaosExporter.image }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           name: chaos-exporter
       serviceAccountName: litmus
 ---

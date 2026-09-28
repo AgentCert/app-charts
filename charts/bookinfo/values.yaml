@@ -102,18 +102,9 @@ monitoring:
       port: 3000
       nodePort: 31687
 
-  # metrics-server: Kubernetes Metrics API (kubectl top, pods_top via MCP)
-  #
-  # Disabled by default: metrics-server is a CLUSTER SINGLETON (its APIService,
-  # ClusterRole and ClusterRoleBinding are cluster-scoped) and is now owned by
-  # the platform chart, deploy/helm/ace/templates/metrics-server.yaml. Installing
-  # it from here too makes concurrently installed applications fight over the
-  # same objects, and lets uninstalling this app break metrics for every other
-  # one -- which in turn wedges namespace deletion cluster-wide.
-  # Only enable this when deploying this chart standalone, with no ACE platform.
-  metricsServer:
-    enabled: false
-    image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
+  # metrics-server (kubectl top, MCP pods_top) is a cluster singleton owned by
+  # the ACE platform chart (deploy/helm/ace/templates/metrics-server.yaml);
+  # application charts must not install it.
 
   # kube-state-metrics: Pod/Deployment/ReplicaSet state-change time series
   kubeStateMetrics:

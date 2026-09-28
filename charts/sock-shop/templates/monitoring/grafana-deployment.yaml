@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - image: {{ .Values.monitoring.grafana.image }}
-        imagePullPolicy: Always
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: grafana
         ports:
         - containerPort: 3000

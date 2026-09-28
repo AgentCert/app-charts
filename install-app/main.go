@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -213,11 +214,6 @@ func installChart(config *Config) error {
 	chartPath := filepath.Join(config.ChartsPath, config.FolderName)
 	applyNamespaceSetDefaults(config)
 
-	// Must run before anything touches a namespace: a broken metrics APIService
-	// makes every namespace in the cluster impossible to finalize, so waiting for
-	// a Terminating namespace below would otherwise block forever.
-	healStaleMetricsAPIService()
-
 	// Calculate total steps upfront for progress display.
 	totalSteps := 2 // cleanupStuckRelease + helm run always execute
 	if config.CreateNS {
@@ -317,9 +313,9 @@ func installChart(config *Config) error {
 	// If --wait was requested, use kubectl rollout status instead of Helm's
 	// built-in wait which suffers from client-go rate limiter bugs in v3.14
 	if config.Wait {
-		nextStep("Waiting for deployments to be ready")
+		nextStep("Waiting for release workloads to be ready")
 		if err := waitForDeployments(config.Namespace, config.ReleaseName, config.Timeout); err != nil {
-			return fmt.Errorf("deployments not ready: %w", err)
+			return fmt.Errorf("release workloads not ready: %w", err)
 		}
 	}
 
@@ -361,13 +357,6 @@ func uninstallApp(config *Config) error {
 		return nil
 	}
 
-	// A namespace cannot finalize while any aggregated APIService is unavailable,
-	// and this uninstall may well be what broke one. Healing here as well as at
-	// install time is what keeps a teardown from leaving the cluster wedged until
-	// the *next* install happens to run -- which, between experiments, can be
-	// hours, and presents as an unrelated "namespace is Terminating" failure.
-	healStaleMetricsAPIService()
-
 	log.Printf("Deleting namespace: %s", config.Namespace)
 	deleteArgs := []string{"delete", "namespace", config.Namespace, "--ignore-not-found"}
 	if config.Timeout != "" {
@@ -383,88 +372,61 @@ func uninstallApp(config *Config) error {
 	return nil
 }
 
-// waitForDeployments waits only for Deployments owned by the given Helm release.
-// Manifest lookup and an empty deployment set fail explicitly; readiness must never
-// fall back to unrelated workloads sharing the namespace.
+// waitForDeployments waits for every Deployment, StatefulSet and DaemonSet the
+// given Helm release owns in namespace. Ownership comes from the
+// meta.helm.sh/release-name annotation Helm stamps on each object it creates,
+// so the wait never covers an unrelated workload sharing the namespace (e.g. a
+// leftover agent) and never depends on parsing rendered YAML. An unreadable
+// workload list, or a release with no workloads, fails explicitly.
 func waitForDeployments(namespace, releaseName, timeout string) error {
 	if timeout == "" {
 		timeout = "15m"
 	}
-
-	var deployments []string
-
-	if releaseName != "" {
-		manifestCmd := exec.Command("helm", "get", "manifest", releaseName, "-n", namespace)
-		manifestOut, manifestErr := manifestCmd.Output()
-		if manifestErr == nil {
-			for _, doc := range strings.Split(string(manifestOut), "---") {
-				var kind, name, docNS string
-				inMetadata := false
-				for _, line := range strings.Split(doc, "\n") {
-					trimmed := strings.TrimSpace(line)
-					if strings.HasPrefix(trimmed, "kind:") && !strings.HasPrefix(line, " ") {
-						kind = strings.TrimSpace(strings.TrimPrefix(trimmed, "kind:"))
-					}
-					if trimmed == "metadata:" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-						inMetadata = true
-					} else if inMetadata && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-						inMetadata = false
-					}
-					if inMetadata {
-						if strings.HasPrefix(trimmed, "name:") {
-							indent := len(line) - len(strings.TrimLeft(line, " \t"))
-							if indent <= 4 {
-								name = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "name:")), `"'`)
-							}
-						}
-						if strings.HasPrefix(trimmed, "namespace:") {
-							docNS = strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, "namespace:")), `"'`)
-						}
-					}
-				}
-				// Only wait for deployments in the target namespace; skip cross-namespace
-				// resources (e.g. monitoring components deployed to a different namespace).
-				if strings.EqualFold(kind, "Deployment") && name != "" && (docNS == "" || docNS == namespace) {
-					deployments = append(deployments, name)
-				}
-			}
-			log.Printf("Scoping wait to %d deployment(s) from helm release %s: %s",
-				len(deployments), releaseName, strings.Join(deployments, ", "))
-		} else {
-			return fmt.Errorf("read manifest for release %s: %w: %s",
-				releaseName, manifestErr, strings.TrimSpace(string(manifestOut)))
-		}
+	if releaseName == "" {
+		return fmt.Errorf("release name is required to scope the readiness wait")
 	}
 
-	if len(deployments) == 0 {
-		return fmt.Errorf("release %s contains no Deployment to verify", releaseName)
+	out, err := exec.Command("kubectl", "get", "deployments,statefulsets,daemonsets",
+		"-n", namespace, "-o", "json").Output()
+	if err != nil {
+		return fmt.Errorf("list workloads in namespace %s: %w", namespace, err)
 	}
+	workloads, err := releaseWorkloads(out, releaseName)
+	if err != nil {
+		return err
+	}
+	if len(workloads) == 0 {
+		return fmt.Errorf("release %s owns no Deployment, StatefulSet or DaemonSet in namespace %s to verify",
+			releaseName, namespace)
+	}
+	log.Printf("Scoping wait to %d workload(s) from helm release %s: %s",
+		len(workloads), releaseName, strings.Join(workloads, ", "))
 
-	// Wait for all deployments concurrently so slow Java services don't serialize the wait
+	// Wait for all workloads concurrently so slow Java services don't serialize the wait
 	type result struct {
 		name string
 		err  error
 	}
-	results := make(chan result, len(deployments))
+	results := make(chan result, len(workloads))
 
-	for _, dep := range deployments {
-		go func(d string) {
-			log.Printf("Waiting for deployment %s...", d)
-			waitCmd := exec.Command("kubectl", "rollout", "status", "deployment/"+d,
+	for _, w := range workloads {
+		go func(ref string) {
+			log.Printf("Waiting for %s...", ref)
+			waitCmd := exec.Command("kubectl", "rollout", "status", ref,
 				"-n", namespace, "--timeout="+timeout)
 			waitCmd.Stdout = os.Stdout
 			waitCmd.Stderr = os.Stderr
 			if err := waitCmd.Run(); err != nil {
-				results <- result{d, fmt.Errorf("deployment %s not ready: %w", d, err)}
+				results <- result{ref, fmt.Errorf("%s not ready: %w", ref, err)}
 				return
 			}
-			log.Printf("Deployment %s is ready", d)
-			results <- result{d, nil}
-		}(dep)
+			log.Printf("%s is ready", ref)
+			results <- result{ref, nil}
+		}(w)
 	}
 
 	var errs []string
-	for i := 0; i < len(deployments); i++ {
+	for i := 0; i < len(workloads); i++ {
 		r := <-results
 		if r.err != nil {
 			errs = append(errs, r.err.Error())
@@ -475,8 +437,36 @@ func waitForDeployments(namespace, releaseName, timeout string) error {
 		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 
-	log.Printf("All deployments in namespace %s are ready", namespace)
+	log.Printf("All workloads of release %s in namespace %s are ready", releaseName, namespace)
 	return nil
+}
+
+// releaseWorkloads returns "<kind>/<name>" refs (lower-case kind, as kubectl
+// rollout expects) for every object in a `kubectl get -o json` List whose
+// meta.helm.sh/release-name annotation equals releaseName, sorted for
+// deterministic logs.
+func releaseWorkloads(listJSON []byte, releaseName string) ([]string, error) {
+	var list struct {
+		Items []struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Name        string            `json:"name"`
+				Annotations map[string]string `json:"annotations"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(listJSON, &list); err != nil {
+		return nil, fmt.Errorf("parse workload list: %w", err)
+	}
+	var refs []string
+	for _, item := range list.Items {
+		if item.Metadata.Annotations["meta.helm.sh/release-name"] != releaseName || item.Metadata.Name == "" {
+			continue
+		}
+		refs = append(refs, strings.ToLower(item.Kind)+"/"+item.Metadata.Name)
+	}
+	sort.Strings(refs)
+	return refs, nil
 }
 
 // cleanupStuckRelease checks if a Helm release exists in a broken state
@@ -605,7 +595,36 @@ func waitForNamespaceNotTerminating(namespace string, timeout time.Duration) err
 		log.Printf("Namespace %s is Terminating, waiting...", namespace)
 		time.Sleep(5 * time.Second)
 	}
+	if broken := unavailableAPIServices(); len(broken) > 0 {
+		return fmt.Errorf("namespace %s still Terminating after %v; the namespace controller "+
+			"cannot finalize namespaces while these aggregated APIServices are unavailable: %s",
+			namespace, timeout, strings.Join(broken, ", "))
+	}
 	return fmt.Errorf("namespace %s still Terminating after %v", namespace, timeout)
+}
+
+// unavailableAPIServices lists aggregated APIServices reporting Available=False.
+// metrics-server is platform-owned (deploy/helm/ace), so this binary never
+// deletes one; it only names the culprit when namespace finalization is wedged.
+func unavailableAPIServices() []string {
+	out, err := exec.Command("kubectl", "get", "apiservices", "-o",
+		`jsonpath={range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Available")].status}{"\n"}{end}`,
+	).Output()
+	if err != nil {
+		return nil
+	}
+	return parseUnavailableAPIServices(string(out))
+}
+
+func parseUnavailableAPIServices(out string) []string {
+	var broken []string
+	for _, line := range strings.Split(out, "\n") {
+		name, status, found := strings.Cut(strings.TrimSpace(line), "\t")
+		if found && strings.EqualFold(strings.TrimSpace(status), "False") {
+			broken = append(broken, name)
+		}
+	}
+	return broken
 }
 
 func ensureNamespace(namespace, releaseName string) error {
