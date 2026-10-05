@@ -43,6 +43,7 @@ metadata:
   labels:
     app: details
     version: v1
+    app.kubernetes.io/name: details
   name: details-v1
   namespace: {{ include "bookinfo.appNamespace" . }}
 spec:
@@ -56,6 +57,7 @@ spec:
       labels:
         app: details
         version: v1
+        app.kubernetes.io/name: details
     spec:
       serviceAccountName: bookinfo-details
       containers:

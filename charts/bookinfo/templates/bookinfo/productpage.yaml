@@ -51,6 +51,7 @@ metadata:
   labels:
     app: productpage
     version: v1
+    app.kubernetes.io/name: productpage
   name: productpage-v1
   namespace: {{ include "bookinfo.appNamespace" . }}
 spec:
@@ -68,6 +69,7 @@ spec:
       labels:
         app: productpage
         version: v1
+        app.kubernetes.io/name: productpage
     spec:
       serviceAccountName: bookinfo-productpage
       containers:

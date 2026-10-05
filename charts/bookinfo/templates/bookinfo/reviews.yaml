@@ -69,6 +69,7 @@ metadata:
   labels:
     app: reviews
     version: v1
+    app.kubernetes.io/name: reviews-v1
   name: reviews-v1
   namespace: {{ include "bookinfo.appNamespace" . }}
 spec:
@@ -82,6 +83,7 @@ spec:
       labels:
         app: reviews
         version: v1
+        app.kubernetes.io/name: reviews-v1
     spec:
       serviceAccountName: bookinfo-reviews
       containers:
@@ -112,6 +114,7 @@ metadata:
   labels:
     app: reviews
     version: v2
+    app.kubernetes.io/name: reviews-v2
   name: reviews-v2
   namespace: {{ include "bookinfo.appNamespace" . }}
 spec:
@@ -125,6 +128,7 @@ spec:
       labels:
         app: reviews
         version: v2
+        app.kubernetes.io/name: reviews-v2
     spec:
       serviceAccountName: bookinfo-reviews
       containers:
@@ -155,6 +159,7 @@ metadata:
   labels:
     app: reviews
     version: v3
+    app.kubernetes.io/name: reviews-v3
   name: reviews-v3
   namespace: {{ include "bookinfo.appNamespace" . }}
 spec:
@@ -168,6 +173,7 @@ spec:
       labels:
         app: reviews
         version: v3
+        app.kubernetes.io/name: reviews-v3
     spec:
       serviceAccountName: bookinfo-reviews
       containers:

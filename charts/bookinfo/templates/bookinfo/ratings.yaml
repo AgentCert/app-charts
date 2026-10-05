@@ -43,6 +43,7 @@ metadata:
   labels:
     app: ratings
     version: v1
+    app.kubernetes.io/name: ratings
   name: ratings-v1
   namespace: {{ include "bookinfo.appNamespace" . }}
 spec:
@@ -56,6 +57,7 @@ spec:
       labels:
         app: ratings
         version: v1
+        app.kubernetes.io/name: ratings
     spec:
       serviceAccountName: bookinfo-ratings
       containers:

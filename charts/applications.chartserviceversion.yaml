@@ -79,7 +79,7 @@ spec:
       description: "Istio's Bookinfo sample — a book-review microservices demo with details, ratings, and three reviews versions (v1/v2/v3) fronted by productpage. Vendored from istio/istio (the tag ITBench pins for its SRE scenarios), deployed without the Istio service mesh layer."
       version: "1.30.2"
       namespace: book-info
-      labelKey: app
+      labelKey: app.kubernetes.io/name
       # The chart folder is `bookinfo`; `book-info` is the namespace and the name
       # earlier manifests used for -folder=.
       aliases: [book-info]
