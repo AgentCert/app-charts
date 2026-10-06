@@ -255,3 +255,41 @@ mcpTools:
       port: 8083
       targetPort: 9090
       nodePort: 31085
+
+# ── Experiment builder settings ──────────────────────────────────────
+# The values above that the ACE experiment builder lets a user change when
+# this application is added to an experiment. Each key is a path in this file
+# and the value found there is the setting's default. No template reads this
+# block, so Helm ignores it. The namespace is chosen in the builder itself and
+# is not listed here (AgentCert pkg/chartconfig validates this block).
+configurations:
+  - key: opentelemetry-demo.components.accounting.resources.limits.memory
+    label: Accounting memory limit
+    type: string
+    pattern: "^[1-9][0-9]*(Mi|Gi)$"
+    group: Resources
+  - key: opentelemetry-demo.components.ad.resources.limits.memory
+    label: Ad memory limit
+    type: string
+    pattern: "^[1-9][0-9]*(Mi|Gi)$"
+    group: Resources
+  - key: opentelemetry-demo.components.fraud-detection.resources.limits.memory
+    label: Fraud detection memory limit
+    type: string
+    pattern: "^[1-9][0-9]*(Mi|Gi)$"
+    group: Resources
+  - key: opentelemetry-demo.components.kafka.resources.limits.memory
+    label: Kafka memory limit
+    type: string
+    pattern: "^[1-9][0-9]*(Mi|Gi)$"
+    group: Resources
+  - key: opentelemetry-demo.components.product-catalog.resources.limits.memory
+    label: Product catalog memory limit
+    type: string
+    pattern: "^[1-9][0-9]*(Mi|Gi)$"
+    group: Resources
+  - key: opentelemetry-demo.components.recommendation.resources.limits.memory
+    label: Recommendation memory limit
+    type: string
+    pattern: "^[1-9][0-9]*(Mi|Gi)$"
+    group: Resources

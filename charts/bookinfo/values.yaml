@@ -199,3 +199,59 @@ mcpTools:
       port: 8083
       targetPort: 9090
       nodePort: 31084
+
+# ── Experiment builder settings ──────────────────────────────────────
+# The values above that the ACE experiment builder lets a user change when
+# this application is added to an experiment. Each key is a path in this file
+# and the value found there is the setting's default. No template reads this
+# block, so Helm ignores it. The namespace is chosen in the builder itself and
+# is not listed here (AgentCert pkg/chartconfig validates this block).
+configurations:
+  - key: bookInfo.productpage.replicas
+    label: Productpage replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: bookInfo.details.replicas
+    label: Details replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: bookInfo.ratings.replicas
+    label: Ratings replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: bookInfo.reviews.v1.replicas
+    label: Reviews v1 replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: bookInfo.reviews.v2.replicas
+    label: Reviews v2 replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: bookInfo.reviews.v3.replicas
+    label: Reviews v3 replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: bookInfo.loadGenerator.enabled
+    label: Load generator
+    description: Sends steady traffic to productpage so faults have visible impact.
+    type: boolean
+    group: Load
+  - key: bookInfo.loadGenerator.intervalSeconds
+    label: Load interval (seconds)
+    description: Pause between load-generator requests.
+    type: integer
+    min: 1
+    max: 60
+    group: Load

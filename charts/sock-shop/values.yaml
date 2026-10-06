@@ -274,3 +274,59 @@ mcpTools:
       port: 8083
       targetPort: 9090
       nodePort: 31083
+
+# ── Experiment builder settings ──────────────────────────────────────
+# The values above that the ACE experiment builder lets a user change when
+# this application is added to an experiment. Each key is a path in this file
+# and the value found there is the setting's default. No template reads this
+# block, so Helm ignores it. The namespace is chosen in the builder itself and
+# is not listed here (AgentCert pkg/chartconfig validates this block).
+configurations:
+  - key: sockShop.frontEnd.replicas
+    label: Front-end replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.catalogue.replicas
+    label: Catalogue replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.carts.replicas
+    label: Carts replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.orders.replicas
+    label: Orders replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.payment.replicas
+    label: Payment replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.shipping.replicas
+    label: Shipping replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.user.replicas
+    label: User replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.queueMaster.replicas
+    label: Queue master replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
