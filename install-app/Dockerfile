@@ -1,5 +1,10 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+# Base images: upstream names by default (plain `docker build` works anywhere).
+# scripts/build-and-push.sh, setup.sh and prepare-images.sh pass the copy from
+# IMAGE_REGISTRY / the frozen agentcert/ Docker Hub copies (scripts/lib/registry.sh).
+ARG GOLANG_IMAGE=golang:1.21-alpine
+ARG ALPINE_IMAGE=alpine:3.19
+FROM ${GOLANG_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -21,7 +26,7 @@ COPY install-app/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o install-app .
 
 # Final stage
-FROM alpine:3.19
+FROM ${ALPINE_IMAGE}
 
 # Install helm and kubectl
 RUN sed -i 's/https/http/g' /etc/apk/repositories && \

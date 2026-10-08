@@ -93,6 +93,10 @@ type Config struct {
 }
 
 func main() {
+	// Helm runs this same binary as its post-renderer (see registry.go).
+	if runPostRenderIfRequested() {
+		return
+	}
 	config := parseFlags()
 
 	if config.Delete {
@@ -272,6 +276,10 @@ func installChart(config *Config) error {
 		}
 	}
 
+	// Private registry: the target namespace needs the pull secret before any
+	// pod is admitted (no-op unless graphql set ACE_IMAGE_PULL_SECRET).
+	ensurePullSecret(config.Namespace)
+
 	// Build helm command
 	var args []string
 
@@ -309,11 +317,19 @@ func installChart(config *Config) error {
 		args = append(args, "--kube-context", config.KubeContext)
 	}
 
+	// Resolve every image against the registry graphql configured (no-op
+	// unless ACE_IMAGE_REGISTRY / ACE_IMAGE_MIRROR_NAMESPACE are set).
+	postArgs, postEnv := postRendererArgs()
+	args = append(args, postArgs...)
+
 	nextStep("Running: helm %s", formatHelmArgs(args))
 
 	cmd := exec.Command("helm", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	if postEnv != nil {
+		cmd.Env = append(os.Environ(), postEnv...)
+	}
 
 	if err := cmd.Run(); err != nil {
 		return err
