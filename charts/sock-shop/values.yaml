@@ -3,7 +3,6 @@
 # Global settings
 global:
   imagePullPolicy: IfNotPresent
-  imageRegistry: "infyartifactory.jfrog.io/docker-local"    # JFrog Artifactory
 
 # Namespace configurations
 namespaces:
@@ -169,10 +168,9 @@ monitoring:
       port: 3000
       nodePort: 31687
 
-  # metrics-server: Kubernetes Metrics API (kubectl top, pods_top via MCP)
-  metricsServer:
-    enabled: true
-    image: registry.k8s.io/metrics-server/metrics-server:v0.7.2
+  # metrics-server (kubectl top, MCP pods_top) is a cluster singleton owned by
+  # the ACE platform chart (deploy/helm/ace/templates/metrics-server.yaml);
+  # application charts must not install it.
 
   # kube-state-metrics: Pod/Deployment/ReplicaSet state-change time series
   kubeStateMetrics:
@@ -206,12 +204,15 @@ mcpTools:
     enabled: true
     name: kubernetes-mcp-server
     replicas: 1
-    image: kubernetes_mcp_server:latest
+    # Pinned to a released version, not :latest: quay.io's :latest tracks unreleased
+    # main-branch builds and has twice shipped breaking CLI changes ahead of any
+    # release. Bump this tag deliberately after checking upstream's release notes
+    # (docs/configuration-changes.md in the kubernetes-mcp-server repo).
+    image: quay.io/containers/kubernetes_mcp_server:v0.0.67
     port: 8081
-    args:
-      - "--port"
-      - "8081"
-      - "--stateless"
+    config:
+      listOutput: "yaml"
+      stateless: true
     resources:
       requests:
         memory: "128Mi"
@@ -236,7 +237,7 @@ mcpTools:
     enabled: true
     name: prometheus-mcp-server
     replicas: 1
-    image: agentcert/prometheus-mcp-server:latest
+    image: ghcr.io/pab1it0/prometheus-mcp-server:latest
     port: 9090
     # Prometheus connection settings (stored in ConfigMap)
     config:
@@ -273,3 +274,59 @@ mcpTools:
       port: 8083
       targetPort: 9090
       nodePort: 31083
+
+# ── Experiment builder settings ──────────────────────────────────────
+# The values above that the ACE experiment builder lets a user change when
+# this application is added to an experiment. Each key is a path in this file
+# and the value found there is the setting's default. No template reads this
+# block, so Helm ignores it. The namespace is chosen in the builder itself and
+# is not listed here (AgentCert pkg/chartconfig validates this block).
+configurations:
+  - key: sockShop.frontEnd.replicas
+    label: Front-end replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.catalogue.replicas
+    label: Catalogue replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.carts.replicas
+    label: Carts replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.orders.replicas
+    label: Orders replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.payment.replicas
+    label: Payment replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.shipping.replicas
+    label: Shipping replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.user.replicas
+    label: User replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas
+  - key: sockShop.queueMaster.replicas
+    label: Queue master replicas
+    type: integer
+    min: 1
+    max: 5
+    group: Replicas

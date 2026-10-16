@@ -19,8 +19,8 @@ spec:
         - args:
             - --storage.tsdb.retention.time={{ .Values.monitoring.prometheus.retention }}
             - --config.file=/etc/prometheus/prometheus.yml
-          image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.monitoring.prometheus.image) }}
-          imagePullPolicy: Always
+          image: {{ .Values.monitoring.prometheus.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           name: prometheus
           ports:
             - containerPort: 9090

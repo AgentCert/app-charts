@@ -30,6 +30,7 @@ templates.
 - [The `install-app` CLI image](#the-install-app-cli-image)
 - [Installing](#installing)
 - [`app-charts` vs `agent-charts`](#app-charts-vs-agent-charts)
+- [Settings in the experiment builder](#settings-in-the-experiment-builder)
 - [How it fits into AgentCert](#how-it-fits-into-agentcert)
 - [License](#license)
 
@@ -114,8 +115,8 @@ expose typed tools the agent calls during a scan:
 
 | Server | Image | Exposure | What it exposes |
 |---|---|---|---|
-| `kubernetes-mcp-server` | `quay.io/containers/kubernetes_mcp_server:latest` | ClusterIP `:8081` | Pod / Deployment / Service / Event / Log read tools |
-| `prometheus-mcp-server` | `agentcert/prometheus-mcp-server:latest` | NodePort `31083` | PromQL query tools against the deployed Prometheus |
+| `kubernetes-mcp-server` | `quay.io/containers/kubernetes_mcp_server:v0.0.67` | ClusterIP `:8081` | Pod / Deployment / Service / Event / Log read tools |
+| `prometheus-mcp-server` | `ghcr.io/pab1it0/prometheus-mcp-server:latest` | NodePort `31083` | PromQL query tools against the deployed Prometheus |
 
 > Note: `values.yaml` documents that in some AgentCert deployments the MCP servers are
 > wired into the `litmus-exp` namespace by the framework instead — controlled by
@@ -221,6 +222,65 @@ docker run --rm \
 
 Both repos use the same install pattern (Go CLI + baked-in charts in an Alpine+Helm
 container) so AgentCert's subscriber only needs to know one calling convention.
+
+---
+
+## Settings in the experiment builder
+
+A chart can let users change some of its values from the AgentCert experiment
+builder. When a user adds the application to an experiment, the builder shows a form
+for those values, and the user's choices are applied when the step installs the
+chart.
+
+List the values in a top-level `configurations` block of the chart's
+`values.yaml`. Each `key` must be a path that already exists in that file. The
+value found there is the setting's default, and its YAML type is the type the
+user's value is written back as, so a setting stored as `"60"` stays a string:
+
+```yaml
+bookInfo:
+  productpage:
+    replicas: 1
+configurations:
+  - key: bookInfo.productpage.replicas
+    label: Productpage replicas
+    description: Number of productpage pods.
+    type: integer          # string | text | integer | number | boolean | select
+    min: 1                 # integer / number only; also max
+    group: Replicas        # optional heading
+    advanced: false        # true: shown only under "Show advanced settings"
+```
+
+`required: true`, `options: [...]` (for `select`) and `pattern: "<regex>"` (for
+`string` and `text`) are also supported. No template reads the block, so Helm
+ignores it.
+
+**How the values reach Helm.** The builder writes the chosen values onto the
+install step as one argument, `-values-json=<JSON values document>`. The GraphQL
+server checks it against the chart's `configurations` on every save and run, and
+rejects any value the chart does not list. `install-app` writes the document to
+a file and passes it to Helm after `-values` and before the `--set` values:
+chart default < user setting < platform value.
+
+**Rules the server enforces** (AgentCert `graphql/server/pkg/chartconfig`):
+
+- A key must hold a single value (string, number or boolean), not a list or a map.
+- Secrets (`agent.secret.*`, keys named like `PASSWORD`, `TOKEN`, `API_KEY`) cannot
+  be listed: settings are stored in the experiment in plain text.
+- The namespace is chosen in the builder itself; do not list the `namespaces.*` keys.
+- Offer replica counts only for stateless services. The bundled databases and
+  message brokers are single instances, so scaling them breaks the app.
+
+**Check that a setting is actually used.** Declaring a value does not make a
+template read it. Run this from the monorepo root after changing a chart:
+
+```bash
+scripts/validate-chart-configurations.py          # every chart in both hubs
+scripts/validate-chart-configurations.py app-charts/charts/bookinfo
+```
+
+It renders the chart with each setting changed and fails if the rendered
+manifests stay the same.
 
 ---
 

@@ -1,0 +1,28 @@
+{{- if and .Values.chaosExperiments.enabled .Values.chaosExperiments.productpagePodDelete.enabled }}
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: productpage-pod-delete
+  namespace: {{ include "bookinfo.litmusNamespace" . }}
+spec:
+  annotationCheck: 'false'
+  engineState: 'active'
+  appinfo:
+    appns: '{{ include "bookinfo.appNamespace" . }}'
+    applabel: 'app=productpage'
+    appkind: 'deployment'
+  chaosServiceAccount: litmus-admin
+  monitoring: true
+  jobCleanUpPolicy: 'retain'
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: '{{ .Values.chaosExperiments.productpagePodDelete.totalChaosDuration }}'
+            - name: CHAOS_INTERVAL
+              value: '{{ .Values.chaosExperiments.productpagePodDelete.chaosInterval }}'
+            - name: FORCE
+              value: '{{ .Values.chaosExperiments.productpagePodDelete.force }}'
+{{- end }}

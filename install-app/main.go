@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -28,27 +31,93 @@ func (s *setFlags) Set(val string) error {
 	return nil
 }
 
+func isSensitiveHelmKey(key string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
+	for _, marker := range []string{"password", "secret", "token", "api_key", "apikey", "credential", "private_key"} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func redactHelmSetValue(value string) string {
+	key, _, found := strings.Cut(value, "=")
+	if found && isSensitiveHelmKey(key) {
+		return key + "=<redacted>"
+	}
+	return value
+}
+
+func formatHelmArgs(args []string) string {
+	safe := append([]string(nil), args...)
+	for i := 0; i < len(safe); i++ {
+		switch safe[i] {
+		case "--set", "--set-string", "--set-json":
+			if i+1 < len(safe) {
+				safe[i+1] = redactHelmSetValue(safe[i+1])
+				i++
+			}
+		default:
+			for _, prefix := range []string{"--set=", "--set-string=", "--set-json="} {
+				if strings.HasPrefix(safe[i], prefix) {
+					safe[i] = prefix + redactHelmSetValue(strings.TrimPrefix(safe[i], prefix))
+				}
+			}
+		}
+	}
+	return strings.Join(safe, " ")
+}
+
 type Config struct {
-	FolderName  string
-	ReleaseName string
-	Namespace   string
-	ChartsPath  string
-	ValuesFile  string
-	SetValues   setFlags // supports multiple --set flags
-	DryRun      bool
-	Wait        bool
-	Timeout     string
-	CreateNS    bool
-	Upgrade     bool
-	KubeConfig  string
-	KubeContext string
+	FolderName      string
+	ReleaseName     string
+	Namespace       string
+	ChartsPath      string
+	ValuesFile      string
+	SetValues       setFlags // supports multiple --set flags
+	DryRun          bool
+	Wait            bool
+	Timeout         string
+	CreateNS        bool
+	Upgrade         bool
+	Delete          bool
+	DeleteNamespace bool
+	KubeConfig      string
+	KubeContext     string
+
+	// ValuesJSON is the -values-json document; ValuesJSONFile is where it is
+	// written for Helm (see values.go).
+	ValuesJSON     string
+	ValuesJSONFile string
 }
 
 func main() {
+	// Helm runs this same binary as its post-renderer (see registry.go).
+	if runPostRenderIfRequested() {
+		return
+	}
 	config := parseFlags()
+
+	if config.Delete {
+		if err := uninstallApp(config); err != nil {
+			log.Fatalf("Uninstall failed: %v", err)
+		}
+		log.Printf("Successfully uninstalled app chart (release: %s, namespace: %s)", config.ReleaseName, config.Namespace)
+		return
+	}
 
 	if err := validateConfig(config); err != nil {
 		log.Fatalf("Configuration error: %v", err)
+	}
+
+	if config.ValuesJSON != "" {
+		path, err := writeValuesJSON(config.ValuesJSON)
+		if err != nil {
+			log.Fatalf("Configuration error: %v", err)
+		}
+		defer os.Remove(path)
+		config.ValuesJSONFile = path
 	}
 
 	if err := installChart(config); err != nil {
@@ -66,12 +135,15 @@ func parseFlags() *Config {
 	flag.StringVar(&config.Namespace, "namespace", defaultNamespace, "Kubernetes namespace to install into")
 	flag.StringVar(&config.ChartsPath, "charts-path", defaultChartsPath, "Base path where charts are located")
 	flag.StringVar(&config.ValuesFile, "values", "", "Path to custom values file")
+	flag.StringVar(&config.ValuesJSON, "values-json", "", "Chart settings as a JSON values document, applied after -values and before --set")
 	flag.Var(&config.SetValues, "set", "Set values on command line (can be repeated: --set key=value --set key2=value2)")
 	flag.BoolVar(&config.DryRun, "dry-run", false, "Simulate installation without applying")
 	flag.BoolVar(&config.Wait, "wait", true, "Wait for resources to be ready")
 	flag.StringVar(&config.Timeout, "timeout", "20m", "Timeout for installation")
 	flag.BoolVar(&config.CreateNS, "create-namespace", true, "Create namespace if it doesn't exist")
 	flag.BoolVar(&config.Upgrade, "upgrade", true, "Use helm upgrade --install for idempotent installs (set to false to use helm install)")
+	flag.BoolVar(&config.Delete, "delete", false, "Uninstall (helm uninstall) the chart instead of installing it")
+	flag.BoolVar(&config.DeleteNamespace, "delete-namespace", false, "Also delete the target namespace after uninstalling (only used with -delete)")
 	flag.StringVar(&config.KubeConfig, "kubeconfig", "", "Path to kubeconfig file")
 	flag.StringVar(&config.KubeContext, "context", "", "Kubernetes context to use")
 
@@ -88,7 +160,11 @@ func parseFlags() *Config {
 		fmt.Fprintf(os.Stderr, "  # Upgrade existing release\n")
 		fmt.Fprintf(os.Stderr, "  install-app -folder sock-shop -upgrade -namespace sock-shop\n\n")
 		fmt.Fprintf(os.Stderr, "  # Dry-run installation\n")
-		fmt.Fprintf(os.Stderr, "  install-app -folder sock-shop -dry-run\n")
+		fmt.Fprintf(os.Stderr, "  install-app -folder sock-shop -dry-run\n\n")
+		fmt.Fprintf(os.Stderr, "  # Uninstall a previously installed release\n")
+		fmt.Fprintf(os.Stderr, "  install-app -delete -folder sock-shop -namespace sock-shop\n\n")
+		fmt.Fprintf(os.Stderr, "  # Uninstall and also remove the namespace\n")
+		fmt.Fprintf(os.Stderr, "  install-app -delete -delete-namespace -folder sock-shop -namespace sock-shop\n")
 	}
 
 	flag.Parse()
@@ -127,23 +203,65 @@ func validateConfig(config *Config) error {
 	return nil
 }
 
+func applyNamespaceSetDefaults(config *Config) {
+	keyByFolder := map[string]string{
+		"bookinfo":  "namespaces.bookInfo",
+		"otel-demo": "namespaces.otelDemo",
+		"sock-shop": "namespaces.sockShop",
+	}
+
+	namespaceKey, ok := keyByFolder[config.FolderName]
+	if !ok || config.Namespace == "" || hasHelmSetKey(config.SetValues, namespaceKey) {
+		return
+	}
+
+	config.SetValues = append(config.SetValues, fmt.Sprintf("%s=%s", namespaceKey, config.Namespace))
+}
+
+func hasHelmSetKey(values []string, key string) bool {
+	prefix := key + "="
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == key || strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func installChart(config *Config) error {
 	chartPath := filepath.Join(config.ChartsPath, config.FolderName)
+	applyNamespaceSetDefaults(config)
+
+	// Calculate total steps upfront for progress display.
+	totalSteps := 2 // cleanupStuckRelease + helm run always execute
+	if config.CreateNS {
+		totalSteps++
+	}
+	if config.Upgrade {
+		totalSteps++
+	}
+	if config.Wait {
+		totalSteps++
+	}
+	step := 0
+	nextStep := func(msg string, args ...interface{}) {
+		step++
+		log.Printf("[%d/%d] "+msg, append([]interface{}{step, totalSteps}, args...)...)
+	}
 
 	// Pre-create namespace if requested, instead of relying on Helm's --create-namespace
 	// which fails with "already exists" error on upgrade --install when namespace was
 	// created outside of Helm
 	if config.CreateNS {
+		nextStep("Preparing namespace: %s", config.Namespace)
 		if err := ensureNamespace(config.Namespace, config.ReleaseName); err != nil {
 			log.Printf("Warning: failed to ensure namespace %s: %v", config.Namespace, err)
 		}
 	}
 
-	// Copy jfrog-registry imagePullSecret from kube-system into the target namespace
-	// so pods can pull images from JFrog without waiting for jfrog-secret-sync.
-	ensureImagePullSecret(config.Namespace)
-
 	// Clean up any stuck Helm release before attempting install.
+	nextStep("Checking for stuck releases")
 	if err := cleanupStuckRelease(config.ReleaseName, config.Namespace); err != nil {
 		log.Printf("Warning: stuck release cleanup failed: %v", err)
 	}
@@ -152,10 +270,15 @@ func installChart(config *Config) error {
 	// Prevents "invalid ownership metadata" errors when resources were left behind
 	// from a previous Helm release purged without deleting the underlying resources.
 	if config.Upgrade {
+		nextStep("Adopting existing chart resources")
 		if err := adoptExistingResources(config); err != nil {
 			log.Printf("Warning: failed to adopt existing resources: %v", err)
 		}
 	}
+
+	// Private registry: the target namespace needs the pull secret before any
+	// pod is admitted (no-op unless graphql set ACE_IMAGE_PULL_SECRET).
+	ensurePullSecret(config.Namespace)
 
 	// Build helm command
 	var args []string
@@ -171,13 +294,7 @@ func installChart(config *Config) error {
 
 	// Namespace is pre-created by ensureNamespace(), no need for --create-namespace
 
-	if config.ValuesFile != "" {
-		args = append(args, "-f", config.ValuesFile)
-	}
-
-	for _, setValue := range config.SetValues {
-		args = append(args, "--set", setValue)
-	}
+	args = append(args, helmValuesArgs(config)...)
 
 	if config.DryRun {
 		args = append(args, "--dry-run")
@@ -200,11 +317,19 @@ func installChart(config *Config) error {
 		args = append(args, "--kube-context", config.KubeContext)
 	}
 
-	log.Printf("Executing: helm %s", strings.Join(args, " "))
+	// Resolve every image against the registry graphql configured (no-op
+	// unless ACE_IMAGE_REGISTRY / ACE_IMAGE_MIRROR_NAMESPACE are set).
+	postArgs, postEnv := postRendererArgs()
+	args = append(args, postArgs...)
+
+	nextStep("Running: helm %s", formatHelmArgs(args))
 
 	cmd := exec.Command("helm", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	if postEnv != nil {
+		cmd.Env = append(os.Environ(), postEnv...)
+	}
 
 	if err := cmd.Run(); err != nil {
 		return err
@@ -213,63 +338,120 @@ func installChart(config *Config) error {
 	// If --wait was requested, use kubectl rollout status instead of Helm's
 	// built-in wait which suffers from client-go rate limiter bugs in v3.14
 	if config.Wait {
-		if err := waitForDeployments(config.Namespace, config.Timeout); err != nil {
-			return fmt.Errorf("deployments not ready: %w", err)
+		nextStep("Waiting for release workloads to be ready")
+		if err := waitForDeployments(config.Namespace, config.ReleaseName, config.Timeout); err != nil {
+			return fmt.Errorf("release workloads not ready: %w", err)
 		}
 	}
 
 	return nil
 }
 
-// waitForDeployments waits for all deployments in the namespace to be ready
-// using kubectl rollout status, which doesn't suffer from Helm's rate limiter bug.
-func waitForDeployments(namespace, timeout string) error {
-	if timeout == "" {
-		timeout = "15m"
+// uninstallApp uninstalls the Helm release identified by config, and — when
+// config.DeleteNamespace is set — also deletes the target namespace once the
+// release is gone. Mirrors install-agent's uninstallChart(), extended with
+// namespace deletion since the uninstall-application fault (unlike
+// uninstall-agent) requests namespaces:delete in its RBAC and is expected to
+// tear the target application's namespace down entirely, not just its release.
+func uninstallApp(config *Config) error {
+	releaseName := config.ReleaseName
+	if releaseName == "" {
+		releaseName = config.FolderName
 	}
 
-	log.Printf("Waiting for all deployments in namespace %s to be ready (timeout: %s)...", namespace, timeout)
-
-	// Get list of deployments
-	listCmd := exec.Command("kubectl", "get", "deployments", "-n", namespace, "-o", "jsonpath={.items[*].metadata.name}")
-	out, err := listCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to list deployments: %w", err)
+	args := []string{"uninstall", releaseName, "--namespace", config.Namespace, "--ignore-not-found"}
+	if config.Timeout != "" {
+		args = append(args, "--timeout", config.Timeout)
+	}
+	if config.KubeConfig != "" {
+		args = append(args, "--kubeconfig", config.KubeConfig)
+	}
+	if config.KubeContext != "" {
+		args = append(args, "--kube-context", config.KubeContext)
 	}
 
-	deployments := strings.Fields(string(out))
-	if len(deployments) == 0 {
-		log.Printf("No deployments found in namespace %s, skipping wait", namespace)
+	log.Printf("Executing: helm %s", formatHelmArgs(args))
+	cmd := exec.Command("helm", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("helm uninstall failed: %w", err)
+	}
+
+	if !config.DeleteNamespace {
 		return nil
 	}
 
-	log.Printf("Found %d deployments: %s", len(deployments), strings.Join(deployments, ", "))
+	log.Printf("Deleting namespace: %s", config.Namespace)
+	deleteArgs := []string{"delete", "namespace", config.Namespace, "--ignore-not-found"}
+	if config.Timeout != "" {
+		deleteArgs = append(deleteArgs, "--timeout", config.Timeout)
+	}
+	deleteCmd := exec.Command("kubectl", deleteArgs...)
+	deleteCmd.Stdout = os.Stdout
+	deleteCmd.Stderr = os.Stderr
+	if err := deleteCmd.Run(); err != nil {
+		return fmt.Errorf("namespace deletion failed: %w", err)
+	}
 
-	// Wait for all deployments concurrently so slow Java services don't serialize the wait
+	return nil
+}
+
+// waitForDeployments waits for every Deployment, StatefulSet and DaemonSet the
+// given Helm release owns in namespace. Ownership comes from the
+// meta.helm.sh/release-name annotation Helm stamps on each object it creates,
+// so the wait never covers an unrelated workload sharing the namespace (e.g. a
+// leftover agent) and never depends on parsing rendered YAML. An unreadable
+// workload list, or a release with no workloads, fails explicitly.
+func waitForDeployments(namespace, releaseName, timeout string) error {
+	if timeout == "" {
+		timeout = "15m"
+	}
+	if releaseName == "" {
+		return fmt.Errorf("release name is required to scope the readiness wait")
+	}
+
+	out, err := exec.Command("kubectl", "get", "deployments,statefulsets,daemonsets",
+		"-n", namespace, "-o", "json").Output()
+	if err != nil {
+		return fmt.Errorf("list workloads in namespace %s: %w", namespace, err)
+	}
+	workloads, err := releaseWorkloads(out, releaseName)
+	if err != nil {
+		return err
+	}
+	if len(workloads) == 0 {
+		return fmt.Errorf("release %s owns no Deployment, StatefulSet or DaemonSet in namespace %s to verify",
+			releaseName, namespace)
+	}
+	log.Printf("Scoping wait to %d workload(s) from helm release %s: %s",
+		len(workloads), releaseName, strings.Join(workloads, ", "))
+
+	// Wait for all workloads concurrently so slow Java services don't serialize the wait
 	type result struct {
 		name string
 		err  error
 	}
-	results := make(chan result, len(deployments))
+	results := make(chan result, len(workloads))
 
-	for _, dep := range deployments {
-		go func(d string) {
-			log.Printf("Waiting for deployment %s...", d)
-			waitCmd := exec.Command("kubectl", "rollout", "status", "deployment/"+d,
+	for _, w := range workloads {
+		go func(ref string) {
+			log.Printf("Waiting for %s...", ref)
+			waitCmd := exec.Command("kubectl", "rollout", "status", ref,
 				"-n", namespace, "--timeout="+timeout)
 			waitCmd.Stdout = os.Stdout
 			waitCmd.Stderr = os.Stderr
 			if err := waitCmd.Run(); err != nil {
-				results <- result{d, fmt.Errorf("deployment %s not ready: %w", d, err)}
+				results <- result{ref, fmt.Errorf("%s not ready: %w", ref, err)}
 				return
 			}
-			log.Printf("Deployment %s is ready", d)
-			results <- result{d, nil}
-		}(dep)
+			log.Printf("%s is ready", ref)
+			results <- result{ref, nil}
+		}(w)
 	}
 
 	var errs []string
-	for i := 0; i < len(deployments); i++ {
+	for i := 0; i < len(workloads); i++ {
 		r := <-results
 		if r.err != nil {
 			errs = append(errs, r.err.Error())
@@ -280,8 +462,36 @@ func waitForDeployments(namespace, timeout string) error {
 		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 
-	log.Printf("All deployments in namespace %s are ready", namespace)
+	log.Printf("All workloads of release %s in namespace %s are ready", releaseName, namespace)
 	return nil
+}
+
+// releaseWorkloads returns "<kind>/<name>" refs (lower-case kind, as kubectl
+// rollout expects) for every object in a `kubectl get -o json` List whose
+// meta.helm.sh/release-name annotation equals releaseName, sorted for
+// deterministic logs.
+func releaseWorkloads(listJSON []byte, releaseName string) ([]string, error) {
+	var list struct {
+		Items []struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Name        string            `json:"name"`
+				Annotations map[string]string `json:"annotations"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(listJSON, &list); err != nil {
+		return nil, fmt.Errorf("parse workload list: %w", err)
+	}
+	var refs []string
+	for _, item := range list.Items {
+		if item.Metadata.Annotations["meta.helm.sh/release-name"] != releaseName || item.Metadata.Name == "" {
+			continue
+		}
+		refs = append(refs, strings.ToLower(item.Kind)+"/"+item.Metadata.Name)
+	}
+	sort.Strings(refs)
+	return refs, nil
 }
 
 // cleanupStuckRelease checks if a Helm release exists in a broken state
@@ -300,11 +510,38 @@ func cleanupStuckRelease(releaseName, namespace string) error {
 		return nil
 	}
 
-	status := string(out)
+	// Parse JSON to extract only info.status — avoid false positives from
+	// strings.Contains on the full output (which includes the manifest YAML
+	// where words like "failed" appear in probe descriptions, label values, etc.)
+	var helmStatus struct {
+		Info struct {
+			Status string `json:"status"`
+		} `json:"info"`
+	}
+	releaseStatus := ""
+	if jsonErr := json.Unmarshal(out, &helmStatus); jsonErr == nil {
+		releaseStatus = helmStatus.Info.Status
+	} else {
+		// Fallback: find the status value using a narrow pattern rather than
+		// scanning the entire JSON blob.
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.Contains(line, `"status"`) {
+				for _, candidate := range []string{"pending-install", "pending-upgrade", "pending-rollback", "failed", "deployed", "superseded", "uninstalled"} {
+					if strings.Contains(line, candidate) {
+						releaseStatus = candidate
+						break
+					}
+				}
+				if releaseStatus != "" {
+					break
+				}
+			}
+		}
+	}
 	stuckStates := []string{"pending-install", "pending-upgrade", "pending-rollback", "failed"}
 	isStuck := false
 	for _, state := range stuckStates {
-		if strings.Contains(status, state) {
+		if releaseStatus == state {
 			isStuck = true
 			log.Printf("Release %s is stuck in '%s' state, cleaning up...", releaseName, state)
 			break
@@ -364,44 +601,122 @@ func deleteHelmStateSecrets(ctx context.Context, releaseName, namespace string) 
 	return deleteCmd.Run()
 }
 
-// ensureNamespace creates the namespace if it doesn't already exist and ensures
-// it has the required Helm ownership labels and annotations so Helm can adopt it.
-func ensureNamespace(namespace, releaseName string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Check if namespace exists
-	checkCmd := exec.Command("kubectl", "get", "namespace", namespace)
-	if err := checkCmd.Run(); err != nil {
-		// Create namespace
-		log.Printf("Creating namespace: %s", namespace)
-		createCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", namespace)
-		createCmd.Stdout = os.Stdout
-		createCmd.Stderr = os.Stderr
-		if err := createCmd.Run(); err != nil {
-			return fmt.Errorf("failed to create namespace: %w", err)
+// waitForNamespaceNotTerminating polls until the namespace is either absent or
+// Active (not Terminating). Namespace deletion is asynchronous, so the next
+// experiment must wait before trying to recreate the same namespace.
+func waitForNamespaceNotTerminating(namespace string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		out, err := exec.Command(
+			"kubectl", "get", "ns", namespace,
+			"-o", "jsonpath={.status.phase}",
+		).Output()
+		if err != nil {
+			return nil // namespace is absent
 		}
-	} else {
-		log.Printf("Namespace %s already exists", namespace)
+		if !strings.EqualFold(strings.TrimSpace(string(out)), "Terminating") {
+			return nil
+		}
+		log.Printf("Namespace %s is Terminating, waiting...", namespace)
+		time.Sleep(5 * time.Second)
+	}
+	if broken := unavailableAPIServices(); len(broken) > 0 {
+		return fmt.Errorf("namespace %s still Terminating after %v; the namespace controller "+
+			"cannot finalize namespaces while these aggregated APIServices are unavailable: %s",
+			namespace, timeout, strings.Join(broken, ", "))
+	}
+	return fmt.Errorf("namespace %s still Terminating after %v", namespace, timeout)
+}
+
+// unavailableAPIServices lists aggregated APIServices reporting Available=False.
+// metrics-server is platform-owned (deploy/helm/ace), so this binary never
+// deletes one; it only names the culprit when namespace finalization is wedged.
+func unavailableAPIServices() []string {
+	out, err := exec.Command("kubectl", "get", "apiservices", "-o",
+		`jsonpath={range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Available")].status}{"\n"}{end}`,
+	).Output()
+	if err != nil {
+		return nil
+	}
+	return parseUnavailableAPIServices(string(out))
+}
+
+func parseUnavailableAPIServices(out string) []string {
+	var broken []string
+	for _, line := range strings.Split(out, "\n") {
+		name, status, found := strings.Cut(strings.TrimSpace(line), "\t")
+		if found && strings.EqualFold(strings.TrimSpace(status), "False") {
+			broken = append(broken, name)
+		}
+	}
+	return broken
+}
+
+func ensureNamespace(namespace, releaseName string) error {
+	log.Printf("Ensuring namespace: %s", namespace)
+
+	// Wait out a namespace still terminating from a previous experiment's
+	// teardown before trying to create it. This has to happen *before* the
+	// create, not after an AlreadyExists error: once the namespace finishes
+	// terminating it is gone, so the create has to be (re)attempted afterwards.
+	// Previously the wait ran on the AlreadyExists branch and then fell straight
+	// through to labelling a namespace that no longer existed, leaving Helm --
+	// which is deliberately not given --create-namespace -- to fail with
+	// "namespaces not found".
+	if err := waitForNamespaceNotTerminating(namespace, 3*time.Minute); err != nil {
+		return err
+	}
+
+	// Every kubectl call below gets its own deadline. A single context covering
+	// the whole function expired during the wait above, so labelling and
+	// annotating then failed instantly with "context deadline exceeded".
+	kubectl := func(args ...string) (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "kubectl", args...)
+		var stderr bytes.Buffer
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = &stderr
+		err := cmd.Run()
+		if err != nil && stderr.Len() > 0 && !strings.Contains(stderr.String(), "AlreadyExists") {
+			os.Stderr.Write(stderr.Bytes())
+		}
+		return stderr.String(), err
+	}
+
+	// Create the namespace; if it already exists that is fine. Immediately after
+	// a namespace finishes terminating the API server can still reject the
+	// create, so retry briefly.
+	var createErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		var stderr string
+		stderr, createErr = kubectl("create", "namespace", namespace)
+		if createErr == nil {
+			break
+		}
+		if strings.Contains(stderr, "AlreadyExists") {
+			log.Printf("Namespace %s already exists", namespace)
+			createErr = nil
+			break
+		}
+		log.Printf("Namespace %s not creatable yet (%s); retrying...", namespace, strings.TrimSpace(stderr))
+		time.Sleep(5 * time.Second)
+	}
+	if createErr != nil {
+		return fmt.Errorf("failed to create namespace: %w", createErr)
 	}
 
 	// Add Helm ownership labels and annotations so Helm can adopt the namespace
 	log.Printf("Labeling namespace %s for Helm ownership", namespace)
-	labelCmd := exec.CommandContext(ctx, "kubectl", "label", "namespace", namespace,
-		"app.kubernetes.io/managed-by=Helm", "--overwrite")
-	labelCmd.Stdout = os.Stdout
-	labelCmd.Stderr = os.Stderr
-	if err := labelCmd.Run(); err != nil {
+	if _, err := kubectl("label", "namespace", namespace,
+		"app.kubernetes.io/managed-by=Helm", "--overwrite"); err != nil {
 		return fmt.Errorf("failed to label namespace: %w", err)
 	}
 
-	annotateCmd := exec.CommandContext(ctx, "kubectl", "annotate", "namespace", namespace,
+	if _, err := kubectl("annotate", "namespace", namespace,
 		fmt.Sprintf("meta.helm.sh/release-name=%s", releaseName),
 		fmt.Sprintf("meta.helm.sh/release-namespace=%s", namespace),
-		"--overwrite")
-	annotateCmd.Stdout = os.Stdout
-	annotateCmd.Stderr = os.Stderr
-	if err := annotateCmd.Run(); err != nil {
+		"--overwrite"); err != nil {
 		return fmt.Errorf("failed to annotate namespace: %w", err)
 	}
 
@@ -416,14 +731,9 @@ func adoptExistingResources(config *Config) error {
 	chartPath := filepath.Join(config.ChartsPath, config.FolderName)
 
 	args := []string{"template", config.ReleaseName, chartPath, "--namespace", config.Namespace}
-	if config.ValuesFile != "" {
-		args = append(args, "-f", config.ValuesFile)
-	}
-	for _, setValue := range config.SetValues {
-		args = append(args, "--set", setValue)
-	}
+	args = append(args, helmValuesArgs(config)...)
 
-	log.Printf("Discovering chart resources via: helm %s", strings.Join(args, " "))
+	log.Printf("Discovering chart resources via: helm %s", formatHelmArgs(args))
 	cmd := exec.Command("helm", args...)
 	out, err := cmd.Output()
 	if err != nil {
@@ -436,11 +746,15 @@ func adoptExistingResources(config *Config) error {
 		return nil
 	}
 
-	log.Printf("Discovered %d resources from chart template", len(resources))
+	total := len(resources)
+	log.Printf("Discovered %d resources from chart template", total)
 	adopted := 0
-	for _, res := range resources {
+	for i, res := range resources {
 		if adoptResource(res, config.ReleaseName, config.Namespace) {
 			adopted++
+		}
+		if n := i + 1; n%10 == 0 || n == total {
+			log.Printf("  [%d/%d] Resources checked", n, total)
 		}
 	}
 	if adopted > 0 {
@@ -562,70 +876,4 @@ func ListAvailableCharts(chartsPath string) ([]string, error) {
 	}
 
 	return charts, nil
-}
-
-// ensureImagePullSecret copies the jfrog-registry secret from kube-system into the
-// target namespace so that pods can pull images immediately without waiting for
-// the jfrog-secret-sync controller's 60s reconciliation cycle.
-func ensureImagePullSecret(namespace string) {
-	secretName := "jfrog-registry"
-	sourceNS := "kube-system"
-
-	// Check if secret already exists in target namespace
-	checkCmd := exec.Command("kubectl", "get", "secret", secretName, "-n", namespace)
-	if checkCmd.Run() == nil {
-		log.Printf("Secret %s already exists in namespace %s", secretName, namespace)
-		return
-	}
-
-	// Get the dockerconfigjson from kube-system
-	getCmd := exec.Command("kubectl", "get", "secret", secretName, "-n", sourceNS,
-		"-o", "jsonpath={.data.\\.dockerconfigjson}")
-	out, err := getCmd.Output()
-	if err != nil || len(out) == 0 {
-		log.Printf("Warning: could not read %s from %s: %v", secretName, sourceNS, err)
-		return
-	}
-
-	// Create the secret in target namespace using the same dockerconfigjson
-	createCmd := exec.Command("kubectl", "create", "secret", "generic", secretName,
-		"--namespace", namespace,
-		"--type=kubernetes.io/dockerconfigjson",
-		"--from-literal=.dockerconfigjson=PLACEHOLDER",
-		"--dry-run=client", "-o", "yaml")
-	yamlOut, err := createCmd.Output()
-	if err != nil {
-		log.Printf("Warning: failed to generate secret YAML: %v", err)
-		return
-	}
-
-	// Use kubectl apply with the raw secret data patched in via a simpler approach
-	applyCmd := exec.Command("kubectl", "get", "secret", secretName, "-n", sourceNS,
-		"-o", "yaml")
-	secretYAML, err := applyCmd.Output()
-	if err != nil {
-		log.Printf("Warning: failed to get source secret: %v", err)
-		return
-	}
-
-	// Modify namespace in the YAML and apply
-	modifiedYAML := strings.Replace(string(secretYAML), "namespace: "+sourceNS, "namespace: "+namespace, 1)
-	// Remove resourceVersion and uid to allow creation in new namespace
-	lines := strings.Split(modifiedYAML, "\n")
-	var filtered []string
-	for _, line := range lines {
-		if strings.Contains(line, "resourceVersion:") || strings.Contains(line, "uid:") || strings.Contains(line, "creationTimestamp:") {
-			continue
-		}
-		filtered = append(filtered, line)
-	}
-	_ = yamlOut // suppress unused
-
-	applyFinal := exec.Command("kubectl", "apply", "-f", "-")
-	applyFinal.Stdin = strings.NewReader(strings.Join(filtered, "\n"))
-	if output, err := applyFinal.CombinedOutput(); err != nil {
-		log.Printf("Warning: failed to apply secret to %s: %v (%s)", namespace, err, string(output))
-	} else {
-		log.Printf("Copied %s secret to namespace %s", secretName, namespace)
-	}
 }

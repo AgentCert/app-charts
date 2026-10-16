@@ -21,13 +21,11 @@ spec:
         app: sock-shop
         name: user
     spec:
-      imagePullSecrets:
-        - name: jfrog-registry
       containers:
       - env:
         - name: MONGO_HOST
           value: user-db:27017
-        image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.sockShop.user.image) }}
+        image: {{ .Values.sockShop.user.image }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: user
         ports:

@@ -16,8 +16,8 @@ spec:
       name: grafana
     spec:
       containers:
-      - image: {{ include "sock-shop-litmus.image" (list .Values.global.imageRegistry .Values.monitoring.grafana.image) }}
-        imagePullPolicy: Always
+      - image: {{ .Values.monitoring.grafana.image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         name: grafana
         ports:
         - containerPort: 3000

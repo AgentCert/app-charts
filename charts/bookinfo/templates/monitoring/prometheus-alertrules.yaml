@@ -1,0 +1,24 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alertrules
+  namespace: {{ include "bookinfo.monitoringNamespace" . }}
+data:
+  alert.rules: |
+    groups:
+    - name: Bookinfo Alert
+      rules:
+        # Generic target-down alert (Bookinfo's stock images don't all expose
+        # app-level request-duration metrics the way sock-shop's do, so this
+        # rule uses the `up` metric that Prometheus emits for every scrape
+        # target rather than assuming an app-specific metric name exists).
+        - alert: BookinfoTargetDown
+          expr: up{namespace="{{ include "bookinfo.appNamespace" . }}"} == 0
+          for: 2m
+          labels:
+            severity: "slack"
+          annotations:
+            summary: "Bookinfo scrape target down"
+            description: "Target {{`{{ $labels.job }}`}}/{{`{{ $labels.instance }}`}} in book-info has been down for more than 2 minutes."
+{{- end }}
