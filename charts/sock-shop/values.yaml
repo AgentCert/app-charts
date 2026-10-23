@@ -23,7 +23,11 @@ sockShop:
         cpu: 100m
         memory: 100Mi
     service:
-      type: LoadBalancer
+      # NodePort, not LoadBalancer: a LoadBalancer without a provider's
+      # internal annotation is public, and corporate cloud clusters deny that
+      # (Azure Policy "Load Balancers should not have public IPs"), which made
+      # the install-application step fail on AKS. KinD keeps the same port.
+      type: NodePort
       port: 80
       targetPort: 8079
       nodePort: 30001

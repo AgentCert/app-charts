@@ -19,10 +19,11 @@ This tool provides a secure way to deploy Helm charts by packaging them directly
 ### Building the Image
 
 ```bash
-# Build with custom registry/tag
-export IMAGE_REGISTRY=agentcert
-export IMAGE_NAME=agentcert-install-app
+# Build agentcert/agentcert-install-app:<tag>. The registry comes from the
+# monorepo .env: IMAGE_REGISTRY empty = Docker Hub (agentcert/*), or a registry
+# host such as infyartifactory.jfrog.io/docker-local.
 export IMAGE_TAG=v1.0.0
+make build
 ```
 
 ### Pushing to Registry

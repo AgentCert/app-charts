@@ -77,6 +77,7 @@ fi
 BUILD_CONTEXT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SOCKSHOP_VALUES_FILE="${BUILD_CONTEXT}/charts/sock-shop/values.yaml"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+[[ -f "${REPO_ROOT}/scripts/lib/registry.sh" ]] || { echo "ERROR: ${REPO_ROOT}/scripts/lib/registry.sh not found; run this script from an ace-monorepo checkout." >&2; exit 1; }
 # shellcheck source=../../scripts/lib/registry.sh
 source "${REPO_ROOT}/scripts/lib/registry.sh"
 registry_load "${AGENTCERT_ENV_FILE}"

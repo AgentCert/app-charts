@@ -56,8 +56,8 @@ app-charts/
 │   ├── main.go
 │   ├── Dockerfile                       # alpine + helm 3.14 + kubectl 1.29, charts baked in
 │   ├── Makefile                         # build / push / install / lint / test
-│   ├── build-install-app.sh             # CI: timestamp tag + minikube load + env sync
-│   ├── build-and-deploy-app-chart.sh    # Legacy build-and-deploy wrapper
+│   ├── build-install-app.sh             # Builds this image via scripts/build-and-push.sh (--push / --kind-load)
+│   ├── build-and-deploy-app-chart.sh    # Legacy wrapper: builds locally; --push publishes, --deploy loads Minikube
 │   └── README.md                        # Detailed CLI reference (263 lines)
 │
 ├── LICENSE
@@ -75,12 +75,12 @@ an `enabled` flag in `values.yaml` — no separate env-specific values files.
 
 ### Application services
 
-A bundled deploy of the Weaveworks **Sock Shop** demo across 13 services / 13
-ClusterIP+LoadBalancer Service pairs:
+A bundled deploy of the Weaveworks **Sock Shop** demo across 13 services, each with a
+ClusterIP Service except the NodePort `front-end`:
 
 | Service | Image | Notes |
 |---|---|---|
-| `front-end` | `weaveworksdemos/front-end:0.3.12` | LoadBalancer 80 → 8079, NodePort 30001 |
+| `front-end` | `weaveworksdemos/front-end:0.3.12` | NodePort 30001 (80 → 8079) |
 | `catalogue` | `weaveworksdemos/catalogue:0.3.5` | Go |
 | `catalogue-db` | `weaveworksdemos/catalogue-db:0.3.0` | MySQL |
 | `carts` | `weaveworksdemos/carts:0.4.8` | Java, `-Xmx384m`, 500m CPU |
@@ -157,7 +157,7 @@ cd install-app
 
 make build                       # → agentcert/agentcert-install-app:latest
 make build-no-cache              # full rebuild
-make push                        # to registry
+make push                        # push IMAGE_TAG (default latest) to the resolved registry
 make build-push                  # build + push
 make tag NEW_TAG=v1.0.0
 make run                         # docker run … with kubeconfig mount
@@ -170,8 +170,8 @@ The Dockerfile is multi-stage — `golang:1.21` builder → `alpine:3.19` runtim
 `helm v3.14.0` + `kubectl v1.29.0` + non-root user (UID 1000). The whole `charts/` tree
 is copied at build time into `/charts/`.
 
-`build-install-app.sh` adds the same CI niceties as the install-agent script: timestamped
-tag, minikube load, env-var sync into a running `litmusportal-server`.
+`build-install-app.sh` builds this image through the monorepo's
+`scripts/build-and-push.sh`: locally by default, `--push` publishes, `--kind-load` loads KinD.
 
 See [`install-app/README.md`](install-app/README.md) for the full flag reference, RBAC
 requirements, and troubleshooting.
